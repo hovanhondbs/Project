@@ -1,0 +1,107 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+
+function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const navigate = useNavigate();
+
+  const handleLogin = async () => {
+    try {
+      const res = await axios.post('http://localhost:5000/api/auth/login', {
+        email,
+        password
+      });
+
+      const { token, user } = res.data;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+
+      alert('Login successful!');
+
+      // Nếu đã có role và dob thì chuyển thẳng đến dashboard
+      if (user.role && user.dob) {
+        navigate(user.role === 'User' ? '/user' : '/teacher');
+      } else {
+        navigate('/choose-role');
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Login failed');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex justify-center items-center bg-white px-4 relative">
+      {/* nút X quay về trang chủ */}
+      <button
+        className="absolute top-4 right-4 text-xl text-gray-400 hover:text-black"
+        onClick={() => navigate('/')}
+      >
+        &times;
+      </button>
+
+      <div className="w-full max-w-md p-8 shadow rounded-lg">
+        <div className="text-center mb-6">
+          <div className="flex justify-center mb-4 text-lg font-semibold">
+            <button onClick={() => navigate('/signup')} className="text-gray-400 hover:text-black mr-6">Sign up</button>
+            <span className="border-b-2 border-purple-400 text-gray-900">Log in</span>
+          </div>
+          <button className="w-full py-2 border rounded-full flex items-center justify-center gap-2 text-sm hover:bg-gray-50 mb-6">
+            <img src="https://img.icons8.com/color/20/google-logo.png" alt="Google" />
+            Log in with Google
+          </button>
+          <div className="flex items-center justify-between mb-4">
+            <hr className="w-1/3 border-gray-300" />
+            <span className="text-sm text-gray-500">or email</span>
+            <hr className="w-1/3 border-gray-300" />
+          </div>
+        </div>
+
+        {/* Form */}
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm text-gray-700">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm"
+              placeholder="Enter your email"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-700">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm"
+              placeholder="Enter your password"
+              required
+            />
+            <div className="text-right mt-1 text-sm">
+              <a href="#" className="text-blue-600 hover:underline">
+                Forgot password?
+              </a>
+            </div>
+          </div>
+          <button
+            onClick={handleLogin}
+            className="w-full py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition"
+          >
+            Log in
+          </button>
+        </div>
+
+        {/* Footer */}
+        <p className="text-sm text-gray-500 mt-6 text-center">
+          By logging in, you accept our <a href="#" className="underline">Terms</a> & <a href="#" className="underline">Privacy</a>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default LoginPage;
