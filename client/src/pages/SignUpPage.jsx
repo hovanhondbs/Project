@@ -20,29 +20,29 @@ function SignUpPage() {
   };
 
   const handleSubmit = async e => {
-    e.preventDefault();
-    try {
-      // 👉 Không cần lưu biến res nếu không dùng
-      await axios.post('http://localhost:5000/api/auth/register', form);
+  e.preventDefault();
+  try {
+    // Đăng ký
+    await axios.post('http://localhost:5000/api/auth/register', form);
 
-      // Đăng nhập tự động sau khi đăng ký
-      const loginRes = await axios.post('http://localhost:5000/api/auth/login', {
-        email: form.email,
-        password: form.password
-      });
+    // Đăng nhập tự động
+    const loginRes = await axios.post('http://localhost:5000/api/auth/login', {
+      email: form.email,
+      password: form.password
+    });
 
-      const { token, user } = loginRes.data;
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem("userId", user._id);
+    const { token, user } = loginRes.data;
+    localStorage.setItem('token', token);
+    localStorage.setItem("user", JSON.stringify(user));
+    localStorage.setItem("userId", user.id);
 
+    alert('Sign up successful!');
+    navigate('/choose-role');
+  } catch (err) {
+    alert(err.response?.data?.message || 'Sign up failed');
+  }
+};
 
-      alert('Sign up successful!');
-      navigate('/choose-role');
-    } catch (err) {
-      alert(err.response?.data?.message || 'Sign up failed');
-    }
-  };
 
   return (
     <div className="min-h-screen flex justify-center items-center bg-white px-4 relative">

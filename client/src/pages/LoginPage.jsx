@@ -13,12 +13,11 @@ function LoginPage() {
         email,
         password
       });
-
       const { token, user } = res.data;
       localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem("userId", res.data._id); // lưu _id để dùng trong dashboard
-
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("userId", user.id);
+      
       alert('Login successful!');
 
       // ✅ Chuyển sang trang dashboard-user ngay sau khi đăng nhập thành công
