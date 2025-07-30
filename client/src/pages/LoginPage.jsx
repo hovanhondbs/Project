@@ -17,15 +17,13 @@ function LoginPage() {
       const { token, user } = res.data;
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem("userId", res.data._id); // lưu _id để dùng trong dashboard
 
       alert('Login successful!');
 
-      // Nếu đã có role và dob thì chuyển thẳng đến dashboard
-      if (user.role && user.dob) {
-        navigate(user.role === 'User' ? '/user' : '/teacher');
-      } else {
-        navigate('/choose-role');
-      }
+      // ✅ Chuyển sang trang dashboard-user ngay sau khi đăng nhập thành công
+      navigate('/dashboard-user');
+
     } catch (err) {
       alert(err.response?.data?.message || 'Login failed');
     }
@@ -82,9 +80,9 @@ function LoginPage() {
               required
             />
             <div className="text-right mt-1 text-sm">
-              <a href="#" className="text-blue-600 hover:underline">
+              <button className="text-blue-600 hover:underline" onClick={() => alert('Tính năng chưa hỗ trợ')}>
                 Forgot password?
-              </a>
+              </button>
             </div>
           </div>
           <button
@@ -97,7 +95,10 @@ function LoginPage() {
 
         {/* Footer */}
         <p className="text-sm text-gray-500 mt-6 text-center">
-          By logging in, you accept our <a href="#" className="underline">Terms</a> & <a href="#" className="underline">Privacy</a>.
+          By logging in, you accept our
+          <button className="underline text-blue-600 ml-1" onClick={() => alert('Xem Terms')}>Terms</button>
+          &
+          <button className="underline text-blue-600 ml-1" onClick={() => alert('Xem Privacy')}>Privacy</button>.
         </p>
       </div>
     </div>

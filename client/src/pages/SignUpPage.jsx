@@ -22,7 +22,8 @@ function SignUpPage() {
   const handleSubmit = async e => {
     e.preventDefault();
     try {
-      const res = await axios.post('http://localhost:5000/api/auth/register', form);
+      // 👉 Không cần lưu biến res nếu không dùng
+      await axios.post('http://localhost:5000/api/auth/register', form);
 
       // Đăng nhập tự động sau khi đăng ký
       const loginRes = await axios.post('http://localhost:5000/api/auth/login', {
@@ -33,6 +34,8 @@ function SignUpPage() {
       const { token, user } = loginRes.data;
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem("userId", user._id);
+
 
       alert('Sign up successful!');
       navigate('/choose-role');

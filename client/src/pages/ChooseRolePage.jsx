@@ -33,7 +33,7 @@ function ChooseRolePage() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      navigate(role === 'User' ? '/user' : '/teacher');
+      navigate(role === 'User' ? '/dashboard-user' : '/teacher');
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to update profile.');
     }

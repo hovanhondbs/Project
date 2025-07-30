@@ -13,8 +13,8 @@ app.use('/api', require('./routes/flashcardRoutes'));
 // 👉 Kết nối MongoDB
 mongoose.connect('mongodb://localhost:27017/flashcard_app')
   .then(() => {
-    console.log('✅ Đã kết nối MongoDB');
-    app.listen(5000, () => console.log('🚀 Server chạy tại http://localhost:5000'));
+    console.log('Đã kết nối MongoDB');
+    app.listen(5000, () => console.log('Server chạy tại http://localhost:5000'));
   })
   .catch((err) => console.error('❌ Lỗi MongoDB:', err));
 
@@ -23,3 +23,5 @@ app.use('/api/auth', require('./routes/authRoutes'));
 
 require('dotenv').config(); // ✅ đã đúng
 
+const userRoute = require('./routes/userRoute');
+app.use('/api/user', userRoute);
