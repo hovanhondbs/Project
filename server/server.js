@@ -8,7 +8,9 @@ app.use(cors());
 app.use(express.json());
 
 // 👉 Kết nối route API flashcard
-app.use('/api', require('./routes/flashcardRoutes'));
+const flashcardRoutes = require('./routes/flashcardRoutes');
+app.use('/api/flashcards', flashcardRoutes);
+
 
 // 👉 Kết nối MongoDB
 mongoose.connect('mongodb://localhost:27017/flashcard_app')
@@ -25,3 +27,7 @@ require('dotenv').config(); // ✅ đã đúng
 
 const userRoute = require('./routes/userRoute');
 app.use('/api/user', userRoute);
+
+// Cho phép truy cập ảnh đã upload
+const path = require('path');
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

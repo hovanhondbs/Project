@@ -1,140 +1,144 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { FaBell, FaSearch, FaCog, FaTrophy, FaSignOutAlt, FaHome, FaBook, FaRegClone } from 'react-icons/fa';
+import avatarImage from '../assets/icon/20250730_2254_image.png';
 import axios from 'axios';
 
-function ChooseRolePage() {
-  const [day, setDay] = useState('');
-  const [month, setMonth] = useState('');
-  const [year, setYear] = useState('');
-  const [role, setRole] = useState('');
+function Dashboarduser() {
+  const location = useLocation();
   const navigate = useNavigate();
+  const avatarRef = useRef();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem('token');
+  const [userData, setUserData] = useState(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-    if (!token) {
-      alert('You are not logged in!');
-      navigate('/login');
-      return;
-    }
+  // Đóng dropdown khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (avatarRef.current && !avatarRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
-    if (!day || !month || !year || !role) {
-      alert('Please complete all fields.');
-      return;
-    }
+  // Lấy thông tin người dùng
+  useEffect(() => {
+  const storedUserId = localStorage.getItem("userId");
+  
+  if (!storedUserId) {
+    console.warn("userId is missing in localStorage");
+    setLoading(false);
+    return;
+  }
 
-    const dob = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  axios.get(`http://localhost:5000/api/user/${storedUserId}`)
+    .then((res) => setUserData(res.data))
+    .catch((err) => console.error("Lỗi lấy user info:", err))
+    .finally(() => setLoading(false));
+}, []); // ✅ giữ nguyên dependency array là [] để không gây lỗi
 
-    try {
-      await axios.put(
-        'http://localhost:5000/api/auth/update-role',
-        { dob, role },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
 
-      navigate(role === 'User' ? '/dashboard-user' : '/teacher');
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update profile.');
-    }
+
+  // Xử lý đăng xuất
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate('/');
   };
 
-  const generateOptions = (start, end) =>
-    Array.from({ length: end - start + 1 }, (_, i) => start + i);
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 pb-40">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white p-8 rounded shadow max-w-md w-full space-y-6"
-      >
-        <h2 className="text-2xl font-semibold text-center text-gray-800">
-          Complete your profile
-        </h2>
+    <div className="flex min-h-screen bg-gray-100">
+      {/* Sidebar */}
+      <aside className="w-60 bg-white p-4">
+        <h1 className="text-blue-600 text-2xl font-bold mb-8">FlashCard</h1>
+        <nav className="space-y-1 text-gray-700">
+          <Link to="/dashboard-user" className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${location.pathname === '/dashboard-user' ? 'bg-blue-100 text-blue-600' : 'hover:bg-blue-50 hover:text-blue-600'}`}>
+            <div className={`p-2 rounded-full ${location.pathname === '/dashboard-user' ? 'bg-blue-600 text-white' : ''}`}>
+              <FaHome />
+            </div>
+            Home
+          </Link>
+          <Link to="/library" className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${location.pathname === '/library' ? 'bg-[#08D9AA] text-white' : 'hover:bg-[#08D9AA]/20 hover:text-[#08D9AA]'}`}>
+            <div className={`p-2 rounded-full ${location.pathname === '/library' ? 'bg-white text-[#08D9AA]' : ''}`}>
+              <FaBook />
+            </div>
+            Your Library
+          </Link>
+          <Link to="/flashcards" className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${location.pathname === '/flashcards' ? 'bg-[#8731EB] text-white' : 'hover:bg-[#8731EB]/20 hover:text-[#8731EB]'}`}>
+            <div className={`p-2 rounded-full ${location.pathname === '/flashcards' ? 'bg-white text-[#8731EB]' : ''}`}>
+              <FaRegClone />
+            </div>
+            Flashcards
+          </Link>
+        </nav>
+      </aside>
 
-        {/* Birthday Dropdown */}
-        <div>
-          <label className="block text-sm text-gray-600 mb-1">
-            Date of Birth
-          </label>
-          <div className="flex gap-2">
-            <select
-              className="w-1/3 px-3 py-2 border rounded bg-gray-50"
-              value={day}
-              onChange={(e) => setDay(e.target.value)}
-              required
-            >
-              <option value="">Day</option>
-              {generateOptions(1, 31).map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
+      {/* Main content */}
+      <main className="flex-1 p-8">
+        {/* Topbar */}
+        <div className="flex items-center justify-between mb-6 relative">
+          <div className="relative w-full max-w-md">
+            <input
+              type="text"
+              placeholder="Search for study guides"
+              className="w-full px-10 py-2 border rounded-2xl shadow-sm"
+            />
+            <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          </div>
 
-            <select
-              className="w-1/3 px-3 py-2 border rounded bg-gray-50"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              required
-            >
-              <option value="">Month</option>
-              {generateOptions(1, 12).map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+          <div className="flex items-center gap-4 ml-4 relative">
+            <FaBell className="text-xl text-gray-500 hover:text-blue-600 cursor-pointer" />
+            {/* Avatar */}
+            <div className="relative" ref={avatarRef}>
+              <img
+                src={userData?.avatar || avatarImage}
+                alt="User avatar"
+                className="w-14 h-14 rounded-full border-2 border-gray-300 cursor-pointer"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+              />
 
-            <select
-              className="w-1/3 px-3 py-2 border rounded bg-gray-50"
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              required
-            >
-              <option value="">Year</option>
-              {generateOptions(1970, new Date().getFullYear()).reverse().map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+              {/* Dropdown */}
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white border rounded-lg shadow-lg z-10">
+                  <div className="px-4 py-3 border-b">
+                    {loading ? (
+                      <p className="text-sm text-gray-500">Loading...</p>
+                    ) : (
+                      <>
+                        <p className="font-semibold text-sm">{userData?.username || "Username"}</p>
+                        <p className="text-xs text-gray-500">{userData?.email || "email@example.com"}</p>
+                      </>
+                    )}
+                  </div>
+                  <ul className="text-sm text-gray-700">
+                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
+                      <FaTrophy /> Achievements
+                    </li>
+                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
+                      <FaCog /> Settings
+                    </li>
+                    <li onClick={handleLogout} className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
+                      <FaSignOutAlt /> Log out
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Role Radio Group */}
-        <div>
-          <label className="block text-sm text-gray-600 mb-2">
-            Choose Role
-          </label>
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="role"
-                value="User"
-                checked={role === 'User'}
-                onChange={(e) => setRole(e.target.value)}
-              />
-              <span>User</span>
-            </label>
-
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="role"
-                value="Teacher"
-                checked={role === 'Teacher'}
-                onChange={(e) => setRole(e.target.value)}
-              />
-              <span>Teacher</span>
-            </label>
-          </div>
+        <h2 className="text-xl font-semibold mb-4">Recents</h2>
+        <div className="bg-white p-4 rounded shadow text-gray-600">
+          <p>Untitled flashcard set</p>
+          <span className="text-sm text-gray-400">Draft · by you</span>
         </div>
-
-        <button
-          type="submit"
-          className="w-full py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition"
-        >
-          OK
-        </button>
-      </form>
+      </main>
     </div>
   );
 }
 
-export default ChooseRolePage;
+export default Dashboarduser;

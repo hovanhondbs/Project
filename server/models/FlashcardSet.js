@@ -1,14 +1,16 @@
 const mongoose = require('mongoose');
 
-const flashcardSetSchema = new mongoose.Schema({
-  title: String,
-  description: String,
-  owner: mongoose.Schema.Types.Mixed, // vì owner của bạn có lúc là ObjectId, có lúc là chuỗi
-  isPublic: Boolean,
-  tags: [String],
-  createdAt: Date,
-  updatedAt: Date,
+const cardSchema = new mongoose.Schema({
+  term: { type: String, required: true },
+  definition: { type: String, required: true },
+  image: { type: String }
 });
 
-// ⚠️ Đây là dòng QUAN TRỌNG để đảm bảo Mongoose đọc đúng collection
-module.exports = mongoose.model('FlashcardSet', flashcardSetSchema, 'flashcard_sets');
+const flashcardSetSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: String,
+  userId: { type: String, required: true },
+  cards: [cardSchema],
+}, { timestamps: true });
+
+module.exports = mongoose.model('flashcardsets', flashcardSetSchema);
