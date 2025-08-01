@@ -1,11 +1,13 @@
-// src/pages/FlashcardSetDetail.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { FaBell, FaSearch, FaCog, FaTrophy, FaSignOutAlt, FaHome, FaBook, FaRegClone, FaArrowLeft, FaArrowRight } from 'react-icons/fa';
+import {
+  FaBell, FaSearch, FaCog, FaTrophy, FaSignOutAlt,
+  FaHome, FaBook, FaRegClone, FaArrowLeft, FaArrowRight
+} from 'react-icons/fa';
 import avatarImage from '../assets/icon/20250730_2254_image.png';
 import axios from 'axios';
 import './FlashcardSetDetail.css';
-
+import StudyModes from '../components/StudyModes';
 function FlashcardSetDetail() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -173,7 +175,10 @@ function FlashcardSetDetail() {
           </div>
 
           <p className="mt-4 text-center text-gray-500">{currentIndex + 1} / {set.cards.length}</p>
+          <StudyModes />
         </div>
+
+        
       </main>
     </div>
   );
