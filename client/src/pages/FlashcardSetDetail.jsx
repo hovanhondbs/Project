@@ -162,7 +162,7 @@ function FlashcardSetDetail() {
                   )}
                 </div>
                 <div className="flashcard-back">
-                  <p className="text-lg text-gray-700">{currentCard.definition}</p>
+                  <p className="text-lg text-center text-gray-700">{currentCard.definition}</p>
                 </div>
               </div>
             </div>
