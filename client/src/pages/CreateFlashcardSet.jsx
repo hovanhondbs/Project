@@ -3,9 +3,11 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FaBell, FaSearch, FaCog, FaTrophy, FaSignOutAlt, FaHome, FaBook, FaRegClone } from 'react-icons/fa';
 import avatarImage from '../assets/icon/20250730_2254_image.png';
 import axios from 'axios';
-
+import { useParams } from 'react-router-dom';
 function CreateFlashcardSet() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEditMode = !!id;
   const location = useLocation();
   const avatarRef = useRef();
 
@@ -32,6 +34,23 @@ function CreateFlashcardSet() {
       .catch((err) => console.error("Lỗi lấy user info:", err))
       .finally(() => setLoading(false));
   }, [userId]);
+
+  // Lấy thông tin bộ thẻ nếu có
+  useEffect(() => {
+  if (id) {
+    axios.get(`http://localhost:5000/api/flashcards/${id}`)
+      .then((res) => {
+        setTitle(res.data.title);
+        setDescription(res.data.description);
+        setCards(res.data.cards.map(card => ({
+          term: card.term,
+          definition: card.definition,
+          image: card.image || null
+        })));
+      })
+      .catch(err => console.error('Lỗi load flashcard:', err));
+  }
+}, [id]);
 
   // Dropdown avatar
   useEffect(() => {
@@ -101,22 +120,33 @@ function CreateFlashcardSet() {
       formData.append('description', description);
       formData.append('userId', userId);
 
-      const filteredCards = cards.map(card => ({
-        term: card.term,
-        definition: card.definition,
-      }));
+      const filteredCards = cards.map((card) => ({
+  term: card.term,
+  definition: card.definition,
+  image: typeof card.image === 'string' ? card.image : null
+}));
 
-      cards.forEach((card) => {
-        if (card.image) {
-          formData.append('images[]', card.image);
-        }
-      });
+cards.forEach((card) => {
+  if (card.image && typeof card.image !== 'string') {
+    formData.append('images[]', card.image); // chỉ thêm ảnh mới
+  }
+});
 
-      formData.append('cards', JSON.stringify(filteredCards));
+formData.append('cards', JSON.stringify(filteredCards));
 
-      await axios.post('http://localhost:5000/api/flashcards', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+
+      if (isEditMode) {
+  await axios.put(`http://localhost:5000/api/flashcards/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  alert('Cập nhật thành công!');
+} else {
+  await axios.post('http://localhost:5000/api/flashcards', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  alert('Tạo flashcard thành công!');
+}
+
 
       alert('Tạo flashcard thành công!');
       setTitle('');
@@ -200,7 +230,7 @@ function CreateFlashcardSet() {
                 <div className="mb-2">
                   {card.image ? (
                     <div className="relative w-28 h-28">
-                      <img src={URL.createObjectURL(card.image)} alt="preview" className="w-28 h-28 object-cover border rounded shadow" />
+                      <img src={typeof card.image === 'string' ? `http://localhost:5000/${card.image}` : URL.createObjectURL(card.image)}  alt="preview"  className="w-28 h-28 object-cover border rounded shadow"/>
                       <button type="button" className="absolute top-1 right-1 bg-red-600 text-white text-xs px-1 rounded" onClick={() => removeImage(index)}>✕</button>
                     </div>
                   ) : (

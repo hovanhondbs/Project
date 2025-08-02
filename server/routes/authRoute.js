@@ -8,14 +8,15 @@ const router = express.Router();
 // Đăng ký
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, role } = req.body;
+    const { username, email, password, role, dob } = req.body;
 
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ message: 'Email đã tồn tại' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = new User({ username, email, password: hashedPassword, role });
+    const newUser = new User({ username, email, password: hashedPassword, role, dob });
+
     await newUser.save();
 
     res.status(201).json({ message: 'Đăng ký thành công' });

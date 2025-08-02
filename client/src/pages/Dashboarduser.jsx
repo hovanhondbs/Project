@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { FaBell, FaSearch, FaCog, FaTrophy, FaSignOutAlt, FaHome, FaBook, FaRegClone } from 'react-icons/fa';
+import {
+  FaBell, FaSearch, FaCog, FaTrophy,
+  FaSignOutAlt, FaHome, FaBook, FaRegClone
+} from 'react-icons/fa';
 import avatarImage from '../assets/icon/20250730_2254_image.png';
 import axios from 'axios';
 
@@ -12,8 +15,47 @@ function Dashboarduser() {
   const [userData, setUserData] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [recentSets, setRecentSets] = useState([]);
 
-  // Đóng dropdown khi click ra ngoài
+  // Load user info
+  useEffect(() => {
+    const storedUserId = localStorage.getItem("userId");
+
+    if (!storedUserId) {
+      console.warn("userId is missing in localStorage");
+      setLoading(false);
+      return;
+    }
+
+    axios.get(`http://localhost:5000/api/user/${storedUserId}`)
+      .then(res => setUserData(res.data))
+      .catch(err => console.error("Lỗi lấy user info:", err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Load recent flashcard sets
+  // ✅ Load recent flashcard sets từ MongoDB
+useEffect(() => {
+  const storedUserId = localStorage.getItem("userId");
+  if (!storedUserId) return;
+
+  axios.get(`http://localhost:5000/api/user/${storedUserId}/recents`)
+    .then((res) => {
+      console.log("Recents từ server:", res.data); // 👀 kiểm tra dữ liệu
+
+      // Lọc bỏ item nếu setId bị null (trường hợp flashcard đã bị xoá)
+      const sets = res.data
+        .filter(item => item.setId && typeof item.setId === 'object')
+        .map(item => item.setId);
+
+      setRecentSets(sets);
+    })
+    .catch((err) => {
+      console.error("Lỗi khi tải recent từ DB:", err);
+    });
+}, []);
+
+  // Handle click outside avatar dropdown
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (avatarRef.current && !avatarRef.current.contains(e.target)) {
@@ -26,25 +68,6 @@ function Dashboarduser() {
     };
   }, []);
 
-  // Lấy thông tin người dùng
-  useEffect(() => {
-  const storedUserId = localStorage.getItem("userId");
-  
-  if (!storedUserId) {
-    console.warn("userId is missing in localStorage");
-    setLoading(false);
-    return;
-  }
-
-  axios.get(`http://localhost:5000/api/user/${storedUserId}`)
-    .then((res) => setUserData(res.data))
-    .catch((err) => console.error("Lỗi lấy user info:", err))
-    .finally(() => setLoading(false));
-}, []); // ✅ giữ nguyên dependency array là [] để không gây lỗi
-
-
-
-  // Xử lý đăng xuất
   const handleLogout = () => {
     localStorage.clear();
     navigate('/');
@@ -82,17 +105,12 @@ function Dashboarduser() {
         {/* Topbar */}
         <div className="flex items-center justify-between mb-6 relative">
           <div className="relative w-full max-w-md">
-            <input
-              type="text"
-              placeholder="Search for study guides"
-              className="w-full px-10 py-2 border rounded-2xl shadow-sm"
-            />
+            <input type="text" placeholder="Search for study guides" className="w-full px-10 py-2 border rounded-2xl shadow-sm" />
             <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
           </div>
 
           <div className="flex items-center gap-4 ml-4 relative">
             <FaBell className="text-xl text-gray-500 hover:text-blue-600 cursor-pointer" />
-            {/* Avatar */}
             <div className="relative" ref={avatarRef}>
               <img
                 src={userData?.avatar || avatarImage}
@@ -100,8 +118,6 @@ function Dashboarduser() {
                 className="w-14 h-14 rounded-full border-2 border-gray-300 cursor-pointer"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
               />
-
-              {/* Dropdown */}
               {dropdownOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-white border rounded-lg shadow-lg z-10">
                   <div className="px-4 py-3 border-b">
@@ -109,21 +125,15 @@ function Dashboarduser() {
                       <p className="text-sm text-gray-500">Loading...</p>
                     ) : (
                       <>
-                        <p className="font-semibold text-sm">{userData?.username || "Username"}</p>
-                        <p className="text-xs text-gray-500">{userData?.email || "email@example.com"}</p>
+                        <p className="font-semibold text-sm">{userData?.username}</p>
+                        <p className="text-xs text-gray-500">{userData?.email}</p>
                       </>
                     )}
                   </div>
                   <ul className="text-sm text-gray-700">
-                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
-                      <FaTrophy /> Achievements
-                    </li>
-                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
-                      <FaCog /> Settings
-                    </li>
-                    <li onClick={handleLogout} className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
-                      <FaSignOutAlt /> Log out
-                    </li>
+                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer"><FaTrophy /> Achievements</li>
+                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer"><FaCog /> Settings</li>
+                    <li onClick={handleLogout} className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer"><FaSignOutAlt /> Log out</li>
                   </ul>
                 </div>
               )}
@@ -131,11 +141,28 @@ function Dashboarduser() {
           </div>
         </div>
 
+        {/* Recents */}
         <h2 className="text-xl font-semibold mb-4">Recents</h2>
-        <div className="bg-white p-4 rounded shadow text-gray-600">
-          <p>Untitled flashcard set</p>
-          <span className="text-sm text-gray-400">Draft · by you</span>
-        </div>
+        {recentSets.length === 0 ? (
+          <p className="text-gray-500">No recent flashcard sets.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recentSets.map((set) => (
+              <Link
+                key={set._id}
+                to={`/flashcards/${set._id}`}
+                className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-blue-400 transition-all duration-300"
+              >
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>{set.cards?.length || 0} Terms</span>
+                  <span>{userData?.username || 'You'}</span>
+                </div>
+                <h3 className="text-xl font-semibold text-blue-700 truncate">{set.title}</h3>
+                <p className="text-sm text-gray-500 mt-1 line-clamp-2">{set.description}</p>
+              </Link>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );

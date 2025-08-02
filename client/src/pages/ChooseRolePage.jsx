@@ -1,144 +1,100 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { FaBell, FaSearch, FaCog, FaTrophy, FaSignOutAlt, FaHome, FaBook, FaRegClone } from 'react-icons/fa';
-import avatarImage from '../assets/icon/20250730_2254_image.png';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { FaUserGraduate, FaChalkboardTeacher } from 'react-icons/fa';
 
-function Dashboarduser() {
-  const location = useLocation();
+function ChooseRolePage() {
   const navigate = useNavigate();
-  const avatarRef = useRef();
 
-  const [userData, setUserData] = useState(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [selectedRole, setSelectedRole] = useState('');
+  const [day, setDay] = useState('');
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState('');
 
-  // Đóng dropdown khi click ra ngoài
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (avatarRef.current && !avatarRef.current.contains(e.target)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
+  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const years = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i);
 
-  // Lấy thông tin người dùng
-  useEffect(() => {
-  const storedUserId = localStorage.getItem("userId");
-  
-  if (!storedUserId) {
-    console.warn("userId is missing in localStorage");
-    setLoading(false);
-    return;
-  }
+  const handleSubmit = async () => {
+    if (!day || !month || !year || !selectedRole) {
+      alert('Please select your full birth date and role before continuing.');
+      return;
+    }
 
-  axios.get(`http://localhost:5000/api/user/${storedUserId}`)
-    .then((res) => setUserData(res.data))
-    .catch((err) => console.error("Lỗi lấy user info:", err))
-    .finally(() => setLoading(false));
-}, []); // ✅ giữ nguyên dependency array là [] để không gây lỗi
+    const dob = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const userId = localStorage.getItem('userId');
 
+    try {
+      // Gửi ngày sinh lên server
+      await axios.put(`http://localhost:5000/api/user/${userId}/dob`, { dob });
 
+      // Lưu role vào localStorage nếu cần
+      localStorage.setItem('userRole', selectedRole);
 
-  // Xử lý đăng xuất
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate('/');
+      // Điều hướng
+      navigate(selectedRole === 'User' ? '/dashboard-user' : '/dashboard-teacher');
+    } catch (err) {
+      console.error('Error updating DOB:', err);
+      alert('Failed to save birth date.');
+    }
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside className="w-60 bg-white p-4">
-        <h1 className="text-blue-600 text-2xl font-bold mb-8">FlashCard</h1>
-        <nav className="space-y-1 text-gray-700">
-          <Link to="/dashboard-user" className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${location.pathname === '/dashboard-user' ? 'bg-blue-100 text-blue-600' : 'hover:bg-blue-50 hover:text-blue-600'}`}>
-            <div className={`p-2 rounded-full ${location.pathname === '/dashboard-user' ? 'bg-blue-600 text-white' : ''}`}>
-              <FaHome />
-            </div>
-            Home
-          </Link>
-          <Link to="/library" className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${location.pathname === '/library' ? 'bg-[#08D9AA] text-white' : 'hover:bg-[#08D9AA]/20 hover:text-[#08D9AA]'}`}>
-            <div className={`p-2 rounded-full ${location.pathname === '/library' ? 'bg-white text-[#08D9AA]' : ''}`}>
-              <FaBook />
-            </div>
-            Your Library
-          </Link>
-          <Link to="/flashcards" className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${location.pathname === '/flashcards' ? 'bg-[#8731EB] text-white' : 'hover:bg-[#8731EB]/20 hover:text-[#8731EB]'}`}>
-            <div className={`p-2 rounded-full ${location.pathname === '/flashcards' ? 'bg-white text-[#8731EB]' : ''}`}>
-              <FaRegClone />
-            </div>
-            Flashcards
-          </Link>
-        </nav>
-      </aside>
+    <div className="flex items-center justify-center min-h-screen bg-gray-100 px-4">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md text-center">
+        <h2 className="text-2xl font-bold mb-6">Personal Information</h2>
 
-      {/* Main content */}
-      <main className="flex-1 p-8">
-        {/* Topbar */}
-        <div className="flex items-center justify-between mb-6 relative">
-          <div className="relative w-full max-w-md">
-            <input
-              type="text"
-              placeholder="Search for study guides"
-              className="w-full px-10 py-2 border rounded-2xl shadow-sm"
-            />
-            <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-          </div>
+        {/* Date of Birth */}
+        <div className="flex justify-center gap-4 mb-6">
+          <select value={day} onChange={(e) => setDay(e.target.value)} className="border px-3 py-2 rounded">
+            <option value="">Day</option>
+            {days.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
 
-          <div className="flex items-center gap-4 ml-4 relative">
-            <FaBell className="text-xl text-gray-500 hover:text-blue-600 cursor-pointer" />
-            {/* Avatar */}
-            <div className="relative" ref={avatarRef}>
-              <img
-                src={userData?.avatar || avatarImage}
-                alt="User avatar"
-                className="w-14 h-14 rounded-full border-2 border-gray-300 cursor-pointer"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-              />
+          <select value={month} onChange={(e) => setMonth(e.target.value)} className="border px-3 py-2 rounded">
+            <option value="">Month</option>
+            {months.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
 
-              {/* Dropdown */}
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border rounded-lg shadow-lg z-10">
-                  <div className="px-4 py-3 border-b">
-                    {loading ? (
-                      <p className="text-sm text-gray-500">Loading...</p>
-                    ) : (
-                      <>
-                        <p className="font-semibold text-sm">{userData?.username || "Username"}</p>
-                        <p className="text-xs text-gray-500">{userData?.email || "email@example.com"}</p>
-                      </>
-                    )}
-                  </div>
-                  <ul className="text-sm text-gray-700">
-                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
-                      <FaTrophy /> Achievements
-                    </li>
-                    <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
-                      <FaCog /> Settings
-                    </li>
-                    <li onClick={handleLogout} className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
-                      <FaSignOutAlt /> Log out
-                    </li>
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
+          <select value={year} onChange={(e) => setYear(e.target.value)} className="border px-3 py-2 rounded">
+            <option value="">Year</option>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
 
-        <h2 className="text-xl font-semibold mb-4">Recents</h2>
-        <div className="bg-white p-4 rounded shadow text-gray-600">
-          <p>Untitled flashcard set</p>
-          <span className="text-sm text-gray-400">Draft · by you</span>
+        {/* Role selection */}
+        <h3 className="text-lg font-semibold mb-4">Choose your role</h3>
+        <div className="flex justify-center gap-6 mb-6">
+          <button
+            className={`border rounded-xl p-4 w-32 flex flex-col items-center justify-center gap-2 ${
+              selectedRole === 'User' ? 'border-blue-600 bg-blue-50' : 'hover:border-blue-300'
+            }`}
+            onClick={() => setSelectedRole('User')}
+          >
+            <FaUserGraduate className="text-3xl text-blue-500" />
+            <span className="font-semibold">User</span>
+          </button>
+
+          <button
+            className={`border rounded-xl p-4 w-32 flex flex-col items-center justify-center gap-2 ${
+              selectedRole === 'Teacher' ? 'border-blue-600 bg-blue-50' : 'hover:border-blue-300'
+            }`}
+            onClick={() => setSelectedRole('Teacher')}
+          >
+            <FaChalkboardTeacher className="text-3xl text-green-600" />
+            <span className="font-semibold">Teacher</span>
+          </button>
         </div>
-      </main>
+
+        <button
+          onClick={handleSubmit}
+          className="bg-blue-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-blue-700 transition"
+        >
+          OK →
+        </button>
+      </div>
     </div>
   );
 }
 
-export default Dashboarduser;
+export default ChooseRolePage;

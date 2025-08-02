@@ -54,3 +54,12 @@
 .flashcard-back {
   transform: rotateY(-180deg);
 }
+
+/* Flashcard tự động lật khi hover */
+.flashcard.hover-flip .flashcard-inner {
+  transition: transform 0.8s;
+}
+
+.flashcard.hover-flip:hover .flashcard-inner {
+  transform: rotateY(-180deg);
+}

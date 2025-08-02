@@ -7,6 +7,9 @@ import Dashboarduser from './pages/Dashboarduser';
 import CreateFlashcardSet from './pages/CreateFlashcardSet';
 import UserLibrary from './pages/UserLibrary';
 import FlashcardSetDetail from './pages/FlashcardSetDetail';
+import LearnMode from './components/LearnMode';
+import TestMode from './components/TestMode';
+import MatchMode from './components/MatchMode';
 
 function App() {
   return (
@@ -20,9 +23,11 @@ function App() {
         <Route path="/flashcards" element={<CreateFlashcardSet />} />
         <Route path="/library" element={<UserLibrary />} />
         <Route path="/flashcards/:id" element={<FlashcardSetDetail />} />
-        <Route path="/flashcards/:id/learn" element={<div>Learn Mode Coming Soon</div>} />
-        <Route path="/flashcards/:id/test" element={<div>Test Mode Coming Soon</div>} />
-        <Route path="/flashcards/:id/match" element={<div>Match Mode Coming Soon</div>} />
+        <Route path="/edit-flashcard/:id" element={<CreateFlashcardSet />} />
+        <Route path="/flashcards/:id/learn" element={<LearnMode />} />
+        <Route path="/flashcards/:id/test" element={<TestMode />} />
+        <Route path="/flashcards/:id/match" element={<MatchMode />} />
+
 
       </Routes>
     </BrowserRouter>
