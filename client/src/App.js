@@ -10,6 +10,7 @@ import FlashcardSetDetail from './pages/FlashcardSetDetail';
 import LearnMode from './components/LearnMode';
 import TestMode from './components/TestMode';
 import MatchMode from './components/MatchMode';
+import AchievementsPage from './pages/AchievementsPage';
 
 function App() {
   return (
@@ -27,7 +28,7 @@ function App() {
         <Route path="/flashcards/:id/learn" element={<LearnMode />} />
         <Route path="/flashcards/:id/test" element={<TestMode />} />
         <Route path="/flashcards/:id/match" element={<MatchMode />} />
-
+        <Route path="/achievements" element={<AchievementsPage />} />
 
       </Routes>
     </BrowserRouter>

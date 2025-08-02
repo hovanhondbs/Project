@@ -11,38 +11,57 @@ function SignUpPage() {
     role: 'User'
   });
 
+  const [errors, setErrors] = useState({});
+
   const handleChange = e => {
     const { name, value } = e.target;
     setForm(prev => ({
       ...prev,
       [name]: value
     }));
+    setErrors(prev => ({
+      ...prev,
+      [name]: false
+    }));
   };
 
   const handleSubmit = async e => {
-  e.preventDefault();
-  try {
-    // Đăng ký
-    await axios.post('http://localhost:5000/api/auth/register', form);
+    e.preventDefault();
 
-    // Đăng nhập tự động
-    const loginRes = await axios.post('http://localhost:5000/api/auth/login', {
-      email: form.email,
-      password: form.password
-    });
+    const newErrors = {};
+    if (!form.name.trim()) newErrors.name = true;
+    if (!form.email.trim()) newErrors.email = true;
+    if (!form.password.trim()) newErrors.password = true;
 
-    const { token, user } = loginRes.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem("user", JSON.stringify(user));
-    localStorage.setItem("userId", user.id);
+    setErrors(newErrors);
 
-    alert('Sign up successful!');
-    navigate('/choose-role');
-  } catch (err) {
-    alert(err.response?.data?.message || 'Sign up failed');
-  }
-};
+    if (Object.keys(newErrors).length > 0) {
+      return; // Có lỗi, không submit
+    }
 
+    try {
+      await axios.post('http://localhost:5000/api/auth/register', form);
+
+      const loginRes = await axios.post('http://localhost:5000/api/auth/login', {
+        email: form.email,
+        password: form.password
+      });
+
+      const { token, user } = loginRes.data;
+      localStorage.setItem('token', token);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("userId", user.id);
+
+      alert('Sign up successful!');
+      navigate('/choose-role');
+    } catch (err) {
+      const message = err.response?.data?.message || 'Sign up failed';
+      if (message.toLowerCase().includes('email')) {
+        setErrors(prev => ({ ...prev, email: true }));
+      }
+      alert(message);
+    }
+  };
 
   return (
     <div className="min-h-screen flex justify-center items-center bg-white px-4 relative">
@@ -80,9 +99,10 @@ function SignUpPage() {
               name="name"
               value={form.name}
               onChange={handleChange}
-              className="w-full mt-1 px-3 py-2 border rounded bg-gray-50"
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
+                errors.name ? 'border-red-500' : ''
+              }`}
               placeholder="Your full name"
-              required
             />
           </div>
 
@@ -93,9 +113,10 @@ function SignUpPage() {
               name="email"
               value={form.email}
               onChange={handleChange}
-              className="w-full mt-1 px-3 py-2 border rounded bg-gray-50"
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
+                errors.email ? 'border-red-500' : ''
+              }`}
               placeholder="you@example.com"
-              required
             />
           </div>
 
@@ -106,9 +127,10 @@ function SignUpPage() {
               name="password"
               value={form.password}
               onChange={handleChange}
-              className="w-full mt-1 px-3 py-2 border rounded bg-gray-50"
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
+                errors.password ? 'border-red-500' : ''
+              }`}
               placeholder="Your password"
-              required
             />
           </div>
 

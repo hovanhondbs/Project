@@ -31,3 +31,7 @@ app.use('/api/user', userRoute);
 // Cho phép truy cập ảnh đã upload
 const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// 👉 Kết nối route API activity logger
+const activityRoutes = require("./routes/activityRoutes");
+app.use("/api/activity", activityRoutes);

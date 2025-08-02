@@ -5,9 +5,20 @@ import axios from 'axios';
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errors, setErrors] = useState({});
   const navigate = useNavigate();
 
   const handleLogin = async () => {
+    const newErrors = {};
+    if (!email.trim()) newErrors.email = true;
+    if (!password.trim()) newErrors.password = true;
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      return; // Dừng nếu còn lỗi
+    }
+
     try {
       const res = await axios.post('http://localhost:5000/api/auth/login', {
         email,
@@ -19,10 +30,7 @@ function LoginPage() {
       localStorage.setItem("userId", user.id);
       
       alert('Login successful!');
-
-      // ✅ Chuyển sang trang dashboard-user ngay sau khi đăng nhập thành công
       navigate('/dashboard-user');
-
     } catch (err) {
       alert(err.response?.data?.message || 'Login failed');
     }
@@ -30,7 +38,6 @@ function LoginPage() {
 
   return (
     <div className="min-h-screen flex justify-center items-center bg-white px-4 relative">
-      {/* nút X quay về trang chủ */}
       <button
         className="absolute top-4 right-4 text-xl text-gray-400 hover:text-black"
         onClick={() => navigate('/')}
@@ -62,10 +69,14 @@ function LoginPage() {
             <input
               type="email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm"
+              onChange={e => {
+                setEmail(e.target.value);
+                setErrors(prev => ({ ...prev, email: false }));
+              }}
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm ${
+                errors.email ? 'border-red-500' : ''
+              }`}
               placeholder="Enter your email"
-              required
             />
           </div>
           <div>
@@ -73,10 +84,14 @@ function LoginPage() {
             <input
               type="password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm"
+              onChange={e => {
+                setPassword(e.target.value);
+                setErrors(prev => ({ ...prev, password: false }));
+              }}
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm ${
+                errors.password ? 'border-red-500' : ''
+              }`}
               placeholder="Enter your password"
-              required
             />
             <div className="text-right mt-1 text-sm">
               <button className="text-blue-600 hover:underline" onClick={() => alert('Tính năng chưa hỗ trợ')}>

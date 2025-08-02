@@ -10,14 +10,28 @@ function ChooseRolePage() {
   const [day, setDay] = useState('');
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
+  const [errors, setErrors] = useState({
+    day: false,
+    month: false,
+    year: false,
+    role: false,
+  });
 
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i);
 
   const handleSubmit = async () => {
-    if (!day || !month || !year || !selectedRole) {
-      alert('Please select your full birth date and role before continuing.');
+    const newErrors = {
+      day: !day,
+      month: !month,
+      year: !year,
+      role: !selectedRole,
+    };
+
+    setErrors(newErrors);
+
+    if (Object.values(newErrors).some(Boolean)) {
       return;
     }
 
@@ -25,13 +39,8 @@ function ChooseRolePage() {
     const userId = localStorage.getItem('userId');
 
     try {
-      // Gửi ngày sinh lên server
       await axios.put(`http://localhost:5000/api/user/${userId}/dob`, { dob });
-
-      // Lưu role vào localStorage nếu cần
       localStorage.setItem('userRole', selectedRole);
-
-      // Điều hướng
       navigate(selectedRole === 'User' ? '/dashboard-user' : '/dashboard-teacher');
     } catch (err) {
       console.error('Error updating DOB:', err);
@@ -46,17 +55,29 @@ function ChooseRolePage() {
 
         {/* Date of Birth */}
         <div className="flex justify-center gap-4 mb-6">
-          <select value={day} onChange={(e) => setDay(e.target.value)} className="border px-3 py-2 rounded">
+          <select
+            value={day}
+            onChange={(e) => setDay(e.target.value)}
+            className={`border px-3 py-2 rounded ${errors.day ? 'border-red-500' : ''}`}
+          >
             <option value="">Day</option>
             {days.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
 
-          <select value={month} onChange={(e) => setMonth(e.target.value)} className="border px-3 py-2 rounded">
+          <select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className={`border px-3 py-2 rounded ${errors.month ? 'border-red-500' : ''}`}
+          >
             <option value="">Month</option>
             {months.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
 
-          <select value={year} onChange={(e) => setYear(e.target.value)} className="border px-3 py-2 rounded">
+          <select
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+            className={`border px-3 py-2 rounded ${errors.year ? 'border-red-500' : ''}`}
+          >
             <option value="">Year</option>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -67,7 +88,11 @@ function ChooseRolePage() {
         <div className="flex justify-center gap-6 mb-6">
           <button
             className={`border rounded-xl p-4 w-32 flex flex-col items-center justify-center gap-2 ${
-              selectedRole === 'User' ? 'border-blue-600 bg-blue-50' : 'hover:border-blue-300'
+              selectedRole === 'User'
+                ? 'border-blue-600 bg-blue-50'
+                : errors.role
+                ? 'border-red-500'
+                : 'hover:border-blue-300'
             }`}
             onClick={() => setSelectedRole('User')}
           >
@@ -77,7 +102,11 @@ function ChooseRolePage() {
 
           <button
             className={`border rounded-xl p-4 w-32 flex flex-col items-center justify-center gap-2 ${
-              selectedRole === 'Teacher' ? 'border-blue-600 bg-blue-50' : 'hover:border-blue-300'
+              selectedRole === 'Teacher'
+                ? 'border-blue-600 bg-blue-50'
+                : errors.role
+                ? 'border-red-500'
+                : 'hover:border-blue-300'
             }`}
             onClick={() => setSelectedRole('Teacher')}
           >
