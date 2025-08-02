@@ -1,18 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
-import {
-  FaHome, FaBook, FaRegClone
-} from 'react-icons/fa';
+import { useParams, useNavigate } from 'react-router-dom';
 import KetQuaHocTap from './KetQuaHocTap';
 import axios from 'axios';
 import UserMenu from '../components/UserMenu';
 import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
+import logLearningActivity from "./ActivityLogger";
 
 
 function MatchMode() {
   const { id } = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
   const avatarRef = useRef();
 
@@ -76,6 +73,7 @@ function MatchMode() {
       setSelected([]);
       if (matched.length + 1 === cards.length) {
         setCompleted(true);
+        logLearningActivity();
       }
     } else if (selected.length === 1) {
       setTimeout(() => setSelected([]), 600);

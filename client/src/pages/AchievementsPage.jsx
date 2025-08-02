@@ -3,6 +3,7 @@ import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import SearchInput from '../components/SearchInput';
 import UserMenu from '../components/UserMenu';
+import treeImg from '../assets/image/tree.png';
 
 function AchievementsPage({
   avatarRef,
@@ -38,13 +39,21 @@ function AchievementsPage({
   }, [currentMonth, currentYear]);
 
   const handlePrevMonth = () => {
-    setCurrentMonth((prev) => (prev === 0 ? 11 : prev - 1));
-    if (currentMonth === 0) setCurrentYear((prev) => prev - 1);
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear((prev) => prev - 1);
+    } else {
+      setCurrentMonth((prev) => prev - 1);
+    }
   };
 
   const handleNextMonth = () => {
-    setCurrentMonth((prev) => (prev === 11 ? 0 : prev + 1));
-    if (currentMonth === 11) setCurrentYear((prev) => prev + 1);
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear((prev) => prev + 1);
+    } else {
+      setCurrentMonth((prev) => prev + 1);
+    }
   };
 
   const generateCalendar = () => {
@@ -93,7 +102,7 @@ function AchievementsPage({
 
         <h2 className="text-2xl font-bold mb-4">Recent Activity</h2>
 
-        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col md:flex-row items-center gap-8 md:gap-12">
+        <div className="bg-white p-6 rounded-lg shadow-md flex flex-col md:flex-row justify-center items-center gap-8 md:gap-12">
           {/* Calendar */}
           <div className="flex flex-col items-center">
             <div className="flex items-center gap-4 mb-2">
@@ -120,10 +129,11 @@ function AchievementsPage({
             </table>
           </div>
 
-          {/* Streak */}
-          <div className="flex flex-col items-center text-center">
-            <p className="text-sm text-gray-500 mb-1">Current streak</p>
+          {/* Streak + Tree */}
+          <div className="flex flex-col items-center text-center gap-2">
+            <p className="text-sm text-gray-500">Current streak</p>
             <strong className="text-4xl text-blue-600">{streak} days</strong>
+            <img src={treeImg} alt="Tree" className="w-32 h-auto mt-2" />
           </div>
         </div>
       </main>
