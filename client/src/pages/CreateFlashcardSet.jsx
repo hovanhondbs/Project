@@ -1,6 +1,5 @@
-// ... (giữ nguyên các import như ban đầu)
 import React, { useState, useEffect, useRef } from 'react';
-import {useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import UserMenu from '../components/UserMenu';
 import SearchInput from '../components/SearchInput';
@@ -10,7 +9,6 @@ function CreateFlashcardSet() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditMode = !!id;
-  const location = useLocation();
   const avatarRef = useRef();
 
   const [title, setTitle] = useState('');
@@ -20,7 +18,7 @@ function CreateFlashcardSet() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showFixedButton, setShowFixedButton] = useState(false);
-  const [titleError, setTitleError] = useState(false); // ✅ Thêm state lỗi tiêu đề
+  const [errors, setErrors] = useState({}); // ✅ dùng object
 
   const userId = localStorage.getItem('userId');
 
@@ -79,6 +77,11 @@ function CreateFlashcardSet() {
     const updated = [...cards];
     updated[index][field] = value;
     setCards(updated);
+
+    setErrors(prev => ({
+      ...prev,
+      [`card-${index}`]: false
+    }));
   };
 
   const handleImageUpload = (index, file) => {
@@ -106,9 +109,20 @@ function CreateFlashcardSet() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!title.trim()) {
-      alert('Vui lòng nhập tên bộ thẻ.');
-      setTitleError(true);
+    const newErrors = {};
+    if (!title.trim()) newErrors.title = true;
+    if (!description.trim()) newErrors.description = true;
+
+    cards.forEach((card, i) => {
+      if (!card.term.trim() || !card.definition.trim()) {
+        newErrors[`card-${i}`] = true;
+      }
+    });
+
+    setErrors(newErrors);
+
+    if (Object.keys(newErrors).length > 0) {
+      alert("Vui lòng điền đầy đủ tất cả các trường.");
       return;
     }
 
@@ -147,11 +161,12 @@ function CreateFlashcardSet() {
       setTitle('');
       setDescription('');
       setCards([{ term: '', definition: '', image: null }]);
+      setErrors({});
       navigate('/library');
 
     } catch (err) {
       if (err.response && err.response.status === 409) {
-        setTitleError(true); // ✅ viền đỏ nếu trùng tiêu đề
+        setErrors(prev => ({ ...prev, title: true }));
         alert('Tên bộ thẻ đã tồn tại. Vui lòng chọn tên khác.');
       } else {
         console.error(err);
@@ -180,23 +195,27 @@ function CreateFlashcardSet() {
           <h2 className="text-2xl font-bold mb-6">Create a Flashcard Set</h2>
           <form onSubmit={handleSubmit}>
             <input
-              className={`w-full mb-4 px-3 py-2 border rounded shadow ${titleError ? 'border-red-500' : ''}`}
+              className={`w-full mb-4 px-3 py-2 border rounded shadow ${errors.title ? 'border-red-500' : ''}`}
               placeholder="Topic"
               value={title}
               onChange={(e) => {
                 setTitle(e.target.value);
-                setTitleError(false); // ✅ xoá lỗi khi người dùng nhập lại
+                setErrors(prev => ({ ...prev, title: false }));
               }}
             />
+
             <textarea
-              className="w-full mb-4 px-3 py-2 border rounded shadow"
+              className={`w-full mb-4 px-3 py-2 border rounded shadow ${errors.description ? 'border-red-500' : ''}`}
               placeholder="Description"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                setErrors(prev => ({ ...prev, description: false }));
+              }}
             />
 
             {cards.map((card, index) => (
-              <div key={index} className="mb-4 p-4 border rounded shadow bg-gray-50 relative">
+              <div key={index} className={`mb-4 p-4 border rounded shadow bg-gray-50 relative ${errors[`card-${index}`] ? 'border-red-500' : ''}`}>
                 <input
                   className="w-full mb-2 px-3 py-2 border rounded shadow"
                   placeholder="Word"
@@ -209,6 +228,7 @@ function CreateFlashcardSet() {
                   value={card.definition}
                   onChange={(e) => handleCardChange(index, 'definition', e.target.value)}
                 />
+
                 <div className="mb-2">
                   {card.image ? (
                     <div className="relative w-28 h-28">
@@ -236,6 +256,7 @@ function CreateFlashcardSet() {
                     </label>
                   )}
                 </div>
+
                 <button type="button" className="text-red-600 text-sm mt-1" onClick={() => removeCard(index)}>Remove card</button>
               </div>
             ))}
