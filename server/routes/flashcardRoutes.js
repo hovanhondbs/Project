@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const FlashcardSet = require('../models/FlashcardSet');
+const { ObjectId } = require('mongodb'); // ✅ THÊM dòng này vào
 
 // Setup lưu ảnh
 const storage = multer.diskStorage({
@@ -37,7 +38,7 @@ router.post('/', upload.array('images[]'), async (req, res) => {
     const newSet = new FlashcardSet({
       title,
       description,
-      userId,
+      userId: new ObjectId(userId), // ✅ chuyển userId thành ObjectId
       cards: cardsWithImages,
     });
 
