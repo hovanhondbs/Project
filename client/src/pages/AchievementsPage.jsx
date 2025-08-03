@@ -16,7 +16,7 @@ function AchievementsPage({
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [fireDays, setFireDays] = useState([]);
+  const [fireDays, setFireDays] = useState([]); // dạng YYYY-MM-DD
   const [streak, setStreak] = useState(0);
 
   const MONTH_NAMES = [
@@ -29,14 +29,14 @@ function AchievementsPage({
     if (!userId) return;
 
     axios.get('http://localhost:5000/api/activity', {
-      params: { userId, year: currentYear, month: currentMonth + 1 }
+      params: { userId }
     })
     .then((res) => {
       setFireDays(res.data.fireDays || []);
       setStreak(res.data.streak || 0);
     })
     .catch((err) => console.error('Lỗi lấy hoạt động:', err));
-  }, [currentMonth, currentYear]);
+  }, []);
 
   const handlePrevMonth = () => {
     if (currentMonth === 0) {
@@ -68,7 +68,9 @@ function AchievementsPage({
         if ((i === 0 && j < startDay) || day > totalDays) {
           week.push(<td key={j}></td>);
         } else {
-          const isFire = fireDays.includes(day);
+          const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isFire = fireDays.includes(dateStr);
+
           week.push(
             <td key={j} className="text-center py-1">
               <div className={`w-8 h-8 rounded-full mx-auto ${isFire ? 'bg-orange-100' : ''}`}>
