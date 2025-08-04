@@ -61,7 +61,7 @@ function CreateClassPage() {
         createdBy: userId,
       });
 
-      alert(`✅ Lớp "${res.data.name}" đã được tạo!`);
+      alert(`Lớp "${res.data.name}" đã được tạo!`);
       navigate('/dashboard-teacher');
     } catch (err) {
       if (err.response?.status === 400 && err.response.data?.error === 'Tên lớp đã tồn tại') {

@@ -10,7 +10,6 @@ function DeleteClassButton({ classId, onDeleteSuccess }) {
     try {
       setDeleting(true);
       await axios.delete(`http://localhost:5000/api/classrooms/${classId}`);
-      alert("Class deleted successfully");
       setShowConfirm(false);
       if (onDeleteSuccess) onDeleteSuccess();
     } catch (err) {
