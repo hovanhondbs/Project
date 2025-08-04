@@ -37,3 +37,8 @@ const activityRoutes = require("./routes/activityRoutes");
 app.use("/api/activity", activityRoutes);
 const classroomRoutes = require('./routes/classroomRoute');
 app.use('/api/classrooms', classroomRoutes);
+
+// 👉 Kết nối route API search
+const searchRoute = require('./routes/searchRoute');
+app.use('/api/search', searchRoute);
+

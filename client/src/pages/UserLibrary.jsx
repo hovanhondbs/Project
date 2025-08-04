@@ -40,12 +40,21 @@ function UserLibrary() {
       .catch(err => console.error('Failed to fetch flashcard sets:', err));
   }, [storedUserId]);
 
-  // ✅ Lấy danh sách lớp
+  // ✅ Lấy danh sách lớp nếu là Teacher
   useEffect(() => {
     if (userData?.role === 'Teacher') {
       axios.get(`http://localhost:5000/api/classrooms/by-user/${storedUserId}`)
         .then(res => setClasses(res.data))
         .catch(err => console.error("Lỗi lấy danh sách lớp:", err));
+    }
+  }, [userData, storedUserId]);
+
+  // ✅ Lấy lớp của User đã tham gia
+  useEffect(() => {
+    if (userData?.role === 'User') {
+      axios.get(`http://localhost:5000/api/classrooms/joined/${storedUserId}`)
+        .then(res => setClasses(res.data))
+        .catch(err => console.error("Lỗi lấy lớp đã tham gia:", err));
     }
   }, [userData, storedUserId]);
 
@@ -97,34 +106,32 @@ function UserLibrary() {
             >
               Flashcard sets
             </div>
-            <div className="mr-6 pb-2 text-gray-400 cursor-not-allowed">Practice tests</div>
-            
+
             {userData?.role === 'Teacher' && (
-  <div
-    className={`mr-6 pb-2 cursor-pointer ${
-      activeTab === "classes"
-        ? "border-b-2 border-blue-600 font-semibold text-blue-600"
-        : "text-gray-500"
-    }`}
-    onClick={() => setActiveTab("classes")}
-  >
-    Classes
-  </div>
-)}
+              <div
+                className={`mr-6 pb-2 cursor-pointer ${
+                  activeTab === "classes"
+                    ? "border-b-2 border-blue-600 font-semibold text-blue-600"
+                    : "text-gray-500"
+                }`}
+                onClick={() => setActiveTab("classes")}
+              >
+                Classes
+              </div>
+            )}
 
-{userData?.role === 'User' && (
-  <div
-    className={`mr-6 pb-2 cursor-pointer ${
-      activeTab === "my-classes"
-        ? "border-b-2 border-blue-600 font-semibold text-blue-600"
-        : "text-gray-500"
-    }`}
-    onClick={() => setActiveTab("my-classes")}
-  >
-    My Classes
-  </div>
-)}
-
+            {userData?.role === 'User' && (
+              <div
+                className={`mr-6 pb-2 cursor-pointer ${
+                  activeTab === "my-classes"
+                    ? "border-b-2 border-blue-600 font-semibold text-blue-600"
+                    : "text-gray-500"
+                }`}
+                onClick={() => setActiveTab("my-classes")}
+              >
+                My Classes
+              </div>
+            )}
           </div>
 
           {/* Flashcards */}
@@ -153,7 +160,7 @@ function UserLibrary() {
             </>
           )}
 
-          {/* Classes */}
+          {/* Classes for Teacher */}
           {activeTab === "classes" && userData?.role === 'Teacher' && (
             <>
               {classes.length === 0 ? (
@@ -169,6 +176,32 @@ function UserLibrary() {
                       <div className="flex justify-between text-sm text-gray-600 mb-2">
                         <span>{cls.students?.length || 0} students</span>
                         <span>{userData?.username}</span>
+                      </div>
+                      <h3 className="text-xl font-semibold text-green-700 truncate">{cls.name}</h3>
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">{cls.description}</p>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* My Classes for User */}
+          {activeTab === "my-classes" && userData?.role === 'User' && (
+            <>
+              {classes.length === 0 ? (
+                <p className="text-gray-500">You haven't joined any classes yet.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {classes.map(cls => (
+                    <Link
+                      to={`/classes/${cls._id}`}
+                      key={cls._id}
+                      className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-green-700 transition-all duration-300 block"
+                    >
+                      <div className="flex justify-between text-sm text-gray-600 mb-2">
+                        <span>{cls.students?.length || 0} students</span>
+                        <span>{cls.createdBy?.username || "Teacher"}</span>
                       </div>
                       <h3 className="text-xl font-semibold text-green-700 truncate">{cls.name}</h3>
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">{cls.description}</p>

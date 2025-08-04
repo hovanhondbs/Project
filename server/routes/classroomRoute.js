@@ -1,14 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const mongoose = require('mongoose'); // ✅ Thêm dòng này
+const mongoose = require('mongoose');
 const Classroom = require('../models/Classroom');
+
+// ✅ Load để tránh lỗi populate FlashcardSet
+require('../models/FlashcardSet');
+require('../models/User');
 
 // Tạo lớp mới
 router.post('/', async (req, res) => {
   try {
     const { name, description, createdBy } = req.body;
 
-    // ✅ Ép kiểu createdBy sang ObjectId để so sánh đúng
     const existing = await Classroom.findOne({
       name,
       createdBy: new mongoose.Types.ObjectId(createdBy),
@@ -45,16 +48,26 @@ router.get('/by-user/:userId', async (req, res) => {
   }
 });
 
-
+// ✅ Lấy lớp đã tham gia (cho User)
+router.get('/joined/:userId', async (req, res) => {
+  try {
+    const classrooms = await Classroom.find({
+      students: new mongoose.Types.ObjectId(req.params.userId),
+    }).populate('createdBy', 'username');
+    res.json(classrooms);
+  } catch (err) {
+    console.error('Lỗi lấy lớp đã tham gia:', err);
+    res.status(500).json({ error: 'Không thể tải danh sách lớp đã tham gia' });
+  }
+});
 
 // Lấy thông tin lớp theo ID
-require('../models/FlashcardSet');
 router.get('/:id', async (req, res) => {
   try {
     const classroom = await Classroom.findById(req.params.id)
-      .populate('createdBy', 'username')         // Lấy tên giáo viên tạo lớp
-      .populate('students', 'username email')    // Lấy tên/sdt học viên
-      .populate('flashcards');                   // Nếu bạn có liên kết flashcard
+      .populate('createdBy', 'username')
+      .populate('students', 'username email')
+      .populate('flashcards');
 
     if (!classroom) return res.status(404).json({ error: 'Không tìm thấy lớp' });
 
@@ -64,8 +77,6 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({ error: 'Không thể lấy thông tin lớp học' });
   }
 });
-
-
 
 // Cập nhật lớp học
 router.put('/:id', async (req, res) => {
@@ -100,6 +111,5 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'Không thể xoá lớp' });
   }
 });
-
 
 module.exports = router;
