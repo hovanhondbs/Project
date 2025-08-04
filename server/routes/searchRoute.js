@@ -9,7 +9,7 @@ router.get('/', async (req, res) => {
   if (!query) return res.json({ flashcards: [], classes: [] });
 
   try {
-    const regex = new RegExp(query, 'i');
+    const regex = new RegExp(`^${query}$`, 'i'); // khớp chính xác
     const conditions = [{ name: { $regex: regex } }];
 
     // ✅ Nếu query là ObjectId hợp lệ, thì thêm điều kiện tìm theo _id
