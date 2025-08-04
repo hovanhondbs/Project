@@ -98,19 +98,33 @@ function UserLibrary() {
               Flashcard sets
             </div>
             <div className="mr-6 pb-2 text-gray-400 cursor-not-allowed">Practice tests</div>
-
+            
             {userData?.role === 'Teacher' && (
-              <div
-                className={`mr-6 pb-2 cursor-pointer ${
-                  activeTab === "classes"
-                    ? "border-b-2 border-blue-600 font-semibold text-blue-600"
-                    : "text-gray-500"
-                }`}
-                onClick={() => setActiveTab("classes")}
-              >
-                Classes
-              </div>
-            )}
+  <div
+    className={`mr-6 pb-2 cursor-pointer ${
+      activeTab === "classes"
+        ? "border-b-2 border-blue-600 font-semibold text-blue-600"
+        : "text-gray-500"
+    }`}
+    onClick={() => setActiveTab("classes")}
+  >
+    Classes
+  </div>
+)}
+
+{userData?.role === 'User' && (
+  <div
+    className={`mr-6 pb-2 cursor-pointer ${
+      activeTab === "my-classes"
+        ? "border-b-2 border-blue-600 font-semibold text-blue-600"
+        : "text-gray-500"
+    }`}
+    onClick={() => setActiveTab("my-classes")}
+  >
+    My Classes
+  </div>
+)}
+
           </div>
 
           {/* Flashcards */}
