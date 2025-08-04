@@ -34,7 +34,7 @@ function EditRemoveButtons({ flashcardId }) {
         onClick={handleDelete}
         className="px-3 py-1 text-sm border border-red-500 text-red-600 rounded hover:bg-red-50"
       >
-        Remove
+        Delete
       </button>
     </div>
   );

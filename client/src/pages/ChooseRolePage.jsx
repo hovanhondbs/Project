@@ -97,7 +97,7 @@ function ChooseRolePage() {
             onClick={() => setSelectedRole('User')}
           >
             <FaUserGraduate className="text-3xl text-blue-500" />
-            <span className="font-semibold">User</span>
+            <span className="font-semibold">Student</span>
           </button>
 
           <button
