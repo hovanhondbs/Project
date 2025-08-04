@@ -40,7 +40,7 @@ function UserLibrary() {
       .catch(err => console.error('Failed to fetch flashcard sets:', err));
   }, [storedUserId]);
 
-  // ✅ FIX: Gọi đúng route /api/classrooms/by-user/:id
+  // ✅ Lấy danh sách lớp
   useEffect(() => {
     if (userData?.role === 'Teacher') {
       axios.get(`http://localhost:5000/api/classrooms/by-user/${storedUserId}`)
@@ -99,7 +99,6 @@ function UserLibrary() {
             </div>
             <div className="mr-6 pb-2 text-gray-400 cursor-not-allowed">Practice tests</div>
 
-            {/* ✅ Chỉ hiển thị nếu là Teacher */}
             {userData?.role === 'Teacher' && (
               <div
                 className={`mr-6 pb-2 cursor-pointer ${
@@ -148,9 +147,10 @@ function UserLibrary() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {classes.map(cls => (
-                    <div
+                    <Link
+                      to={`/classes/${cls._id}`}
                       key={cls._id}
-                      className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg transition-all duration-300"
+                      className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-green-700 transition-all duration-300 block"
                     >
                       <div className="flex justify-between text-sm text-gray-600 mb-2">
                         <span>{cls.students?.length || 0} students</span>
@@ -158,7 +158,7 @@ function UserLibrary() {
                       </div>
                       <h3 className="text-xl font-semibold text-green-700 truncate">{cls.name}</h3>
                       <p className="text-sm text-gray-500 mt-1 line-clamp-2">{cls.description}</p>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}

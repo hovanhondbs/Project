@@ -13,6 +13,9 @@ import TestMode from './components/TestMode';
 import MatchMode from './components/MatchMode';
 import AchievementsPage from './pages/AchievementsPage';
 import CreateClassPage from './pages/CreateClassPage';
+import ClassroomDetail from './pages/ClassroomDetail';
+
+
 function App() {
   return (
     <BrowserRouter>
@@ -32,6 +35,7 @@ function App() {
         <Route path="/achievements" element={<AchievementsPage />} />
         <Route path="/dashboard-teacher" element={<Dashboardteacher />} />
         <Route path="/create-class" element={<CreateClassPage />} />
+        <Route path="/classes/:id" element={<ClassroomDetail />} />
       </Routes>
     </BrowserRouter>
   );
