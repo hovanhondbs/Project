@@ -4,6 +4,7 @@ import axios from 'axios';
 import UserMenu from '../components/UserMenu';
 import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
+import { Link } from 'react-router-dom';
 
 function Dashboardteacher() {
   const navigate = useNavigate();
@@ -47,7 +48,7 @@ function Dashboardteacher() {
         console.error("Lỗi khi tải recent từ DB:", err);
       });
   }, []);
-
+  
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -83,29 +84,29 @@ function Dashboardteacher() {
           />
         </div>
 
-        {/* Nội dung Dashboard dành cho giáo viên */}
-        <h2 className="text-2xl font-bold mb-4 text-blue-700">Welcome back, {userData?.username || "Teacher"}!</h2>
-        <p className="text-gray-600 mb-6">Here are your recent flashcard sets and teaching activity.</p>
-
+        {/* Recents */}
+        <h2 className="text-xl font-semibold mb-4">Recents</h2>
         {recentSets.length === 0 ? (
-          <p className="text-gray-500">No recent flashcard sets found.</p>
+          <p className="text-gray-500">No recent flashcard sets.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {recentSets.map((set) => (
-              <div
+              <Link
                 key={set._id}
-                className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg transition"
+                to={`/flashcards/${set._id}`}
+                className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-blue-400 transition-all duration-300"
               >
-                <div className="text-sm text-gray-500 mb-2 flex justify-between">
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
                   <span>{set.cards?.length || 0} Terms</span>
-                  <span>{userData?.username || "Teacher"}</span>
+                  <span>{userData?.username || 'You'}</span>
                 </div>
-                <h3 className="text-lg font-semibold text-blue-600 truncate">{set.title}</h3>
+                <h3 className="text-xl font-semibold text-blue-700 truncate">{set.title}</h3>
                 <p className="text-sm text-gray-500 mt-1 line-clamp-2">{set.description}</p>
-              </div>
+              </Link>
             ))}
           </div>
         )}
+
       </main>
     </div>
   );

@@ -1,25 +1,31 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FaHome, FaBook, FaRegClone } from 'react-icons/fa';
+import { FaHome, FaBook, FaRegClone, FaChalkboardTeacher } from 'react-icons/fa';
 
 function Sidebar() {
   const location = useLocation();
+  const userRole = localStorage.getItem('userRole'); // 👈 lấy vai trò hiện tại
+
+  // Tự xác định route đúng cho "Home" theo vai trò
+  const homePath = userRole === 'Teacher' ? '/dashboard-teacher' : '/dashboard-user';
+  const isHomeActive = location.pathname === homePath;
 
   return (
     <aside className="w-60 bg-white p-4">
       <h1 className="text-blue-600 text-2xl font-bold mb-8">FlashCard</h1>
       <nav className="space-y-1 text-gray-700">
+        {/* Home */}
         <Link
-          to="/dashboard-user"
+          to={homePath}
           className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${
-            location.pathname === '/dashboard-user'
+            isHomeActive
               ? 'bg-blue-100 text-blue-600'
               : 'hover:bg-blue-50 hover:text-blue-600'
           }`}
         >
           <div
             className={`p-2 rounded-full ${
-              location.pathname === '/dashboard-user' ? 'bg-blue-600 text-white' : ''
+              isHomeActive ? 'bg-blue-600 text-white' : ''
             }`}
           >
             <FaHome />
@@ -27,6 +33,7 @@ function Sidebar() {
           Home
         </Link>
 
+        {/* Library */}
         <Link
           to="/library"
           className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${
@@ -35,7 +42,7 @@ function Sidebar() {
               : 'hover:bg-[#08D9AA]/20 hover:text-[#08D9AA]'
           }`}
         >
-          <div
+          <div 
             className={`p-2 rounded-full ${
               location.pathname === '/library' ? 'bg-white text-[#08D9AA]' : ''
             }`}
@@ -45,6 +52,7 @@ function Sidebar() {
           Your Library
         </Link>
 
+        {/* Flashcards */}
         <Link
           to="/flashcards"
           className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${
@@ -62,6 +70,28 @@ function Sidebar() {
           </div>
           Flashcards
         </Link>
+{userRole === 'Teacher' && (
+  <Link
+    to="/create-class"
+    className={`flex items-center gap-3 px-3 py-2 rounded transition font-medium ${
+      location.pathname === '/create-class'
+        ? 'bg-yellow-100 text-yellow-700'
+        : 'hover:bg-yellow-50 hover:text-yellow-700'
+    }`}
+  >
+    <div
+      className={`p-2 rounded-full ${
+        location.pathname === '/create-class' ? 'bg-yellow-600 text-white' : ''
+      }`}
+    >
+      <FaChalkboardTeacher />
+    </div>
+    Create Class
+  </Link>
+)}
+
+
+        
       </nav>
     </aside>
   );

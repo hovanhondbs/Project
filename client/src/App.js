@@ -12,7 +12,7 @@ import LearnMode from './components/LearnMode';
 import TestMode from './components/TestMode';
 import MatchMode from './components/MatchMode';
 import AchievementsPage from './pages/AchievementsPage';
-
+import CreateClassPage from './pages/CreateClassPage';
 function App() {
   return (
     <BrowserRouter>
@@ -31,6 +31,7 @@ function App() {
         <Route path="/flashcards/:id/match" element={<MatchMode />} />
         <Route path="/achievements" element={<AchievementsPage />} />
         <Route path="/dashboard-teacher" element={<Dashboardteacher />} />
+        <Route path="/create-class" element={<CreateClassPage />} />
       </Routes>
     </BrowserRouter>
   );
