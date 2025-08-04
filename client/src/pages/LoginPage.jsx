@@ -9,32 +9,35 @@ function LoginPage() {
   const navigate = useNavigate();
 
   const handleLogin = async () => {
-    const newErrors = {};
-    if (!email.trim()) newErrors.email = true;
-    if (!password.trim()) newErrors.password = true;
+  const newErrors = {};
+  if (!email.trim()) newErrors.email = true;
+  if (!password.trim()) newErrors.password = true;
+  setErrors(newErrors);
+  if (Object.keys(newErrors).length > 0) return;
 
-    setErrors(newErrors);
+  try {
+    const res = await axios.post('http://localhost:5000/api/auth/login', {
+      email,
+      password,
+    });
 
-    if (Object.keys(newErrors).length > 0) {
-      return; // Dừng nếu còn lỗi
-    }
+    const { token, user } = res.data;
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('userId', user.id);
 
-    try {
-      const res = await axios.post('http://localhost:5000/api/auth/login', {
-        email,
-        password
-      });
-      const { token, user } = res.data;
-      localStorage.setItem('token', token);
-      localStorage.setItem("user", JSON.stringify(user));
-      localStorage.setItem("userId", user.id);
-      
-      alert('Login successful!');
-      navigate('/dashboard-user');
-    } catch (err) {
-      alert(err.response?.data?.message || 'Login failed');
-    }
-  };
+    // ✅ gọi thêm để lấy vai trò thực tế
+    const info = await axios.get(`http://localhost:5000/api/user/${user.id}`);
+    localStorage.setItem('userRole', info.data.role);
+
+    alert('Login successful!');
+    const path = info.data.role === 'Teacher' ? '/dashboard-teacher' : '/dashboard-user';
+    navigate(path);
+  } catch (err) {
+    alert(err.response?.data?.message || 'Login failed');
+  }
+};
+
 
   return (
     <div className="min-h-screen flex justify-center items-center bg-white px-4 relative">

@@ -21,32 +21,34 @@ function ChooseRolePage() {
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i);
 
-  const handleSubmit = async () => {
-    const newErrors = {
-      day: !day,
-      month: !month,
-      year: !year,
-      role: !selectedRole,
-    };
-
-    setErrors(newErrors);
-
-    if (Object.values(newErrors).some(Boolean)) {
-      return;
-    }
-
-    const dob = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const userId = localStorage.getItem('userId');
-
-    try {
-      await axios.put(`http://localhost:5000/api/user/${userId}/dob`, { dob });
-      localStorage.setItem('userRole', selectedRole);
-      navigate(selectedRole === 'User' ? '/dashboard-user' : '/dashboard-teacher');
-    } catch (err) {
-      console.error('Error updating DOB:', err);
-      alert('Failed to save birth date.');
-    }
+ const handleSubmit = async () => {
+  const newErrors = {
+    day: !day,
+    month: !month,
+    year: !year,
+    role: !selectedRole,
   };
+
+  setErrors(newErrors);
+  if (Object.values(newErrors).some(Boolean)) return;
+
+  const dob = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const userId = localStorage.getItem('userId');
+
+  try {
+    await axios.put(`http://localhost:5000/api/user/${userId}/dob`, {
+      dob,
+      role: selectedRole, // gửi role lên server
+    });
+
+    localStorage.setItem('userRole', selectedRole);
+    navigate(selectedRole === 'User' ? '/dashboard-user' : '/dashboard-teacher');
+  } catch (err) {
+    console.error('❌ Error updating DOB and role:', err);
+    alert('Failed to save information.');
+  }
+};
+
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100 px-4">

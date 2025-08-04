@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'; // 👈 Trang bạn đã tạo
 import SignUpPage from './pages/SignUpPage';
 import ChooseRolePage from './pages/ChooseRolePage';
 import Dashboarduser from './pages/Dashboarduser';
+import Dashboardteacher from './pages/Dashboardteacher';
 import CreateFlashcardSet from './pages/CreateFlashcardSet';
 import UserLibrary from './pages/UserLibrary';
 import FlashcardSetDetail from './pages/FlashcardSetDetail';
@@ -29,7 +30,7 @@ function App() {
         <Route path="/flashcards/:id/test" element={<TestMode />} />
         <Route path="/flashcards/:id/match" element={<MatchMode />} />
         <Route path="/achievements" element={<AchievementsPage />} />
-
+        <Route path="/dashboard-teacher" element={<Dashboardteacher />} />
       </Routes>
     </BrowserRouter>
   );
