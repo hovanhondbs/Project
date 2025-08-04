@@ -1,33 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import SearchInput from '../components/SearchInput';
 import UserMenu from '../components/UserMenu';
 import treeImg from '../assets/image/tree.png';
 
-function AchievementsPage({
-  avatarRef,
-  dropdownOpen,
-  setDropdownOpen,
-  userData,
-  loading,
-  handleLogout,
-}) {
+function AchievementsPage() {
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [fireDays, setFireDays] = useState([]); // dạng YYYY-MM-DD
   const [streak, setStreak] = useState(0);
 
-  const MONTH_NAMES = [
-    'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
-    'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
-  ];
+  // ✅ Thêm phần này để tránh lỗi với UserMenu
+  const avatarRef = useRef();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [userData, setUserData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const userId = localStorage.getItem('userId');
     if (!userId) return;
 
+    // Lấy dữ liệu hoạt động
     axios.get('http://localhost:5000/api/activity', {
       params: { userId }
     })
@@ -36,7 +33,35 @@ function AchievementsPage({
       setStreak(res.data.streak || 0);
     })
     .catch((err) => console.error('Lỗi lấy hoạt động:', err));
+
+    // Lấy thông tin user để UserMenu hoạt động
+    axios.get(`http://localhost:5000/api/user/${userId}`)
+      .then(res => setUserData(res.data))
+      .catch(err => console.error("Lỗi lấy thông tin user:", err))
+      .finally(() => setLoading(false));
   }, []);
+
+   // Đóng dropdown khi click ra ngoài
+    useEffect(() => {
+      const handleClickOutside = (e) => {
+        if (avatarRef.current && !avatarRef.current.contains(e.target)) {
+          setDropdownOpen(false);
+        }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, []);
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate('/');
+  };
+
+  const MONTH_NAMES = [
+    'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+    'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
+  ];
 
   const handlePrevMonth = () => {
     if (currentMonth === 0) {
