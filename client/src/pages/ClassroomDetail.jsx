@@ -1,6 +1,6 @@
+// ClassroomDetail.jsx
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import SearchInput from '../components/SearchInput';
@@ -47,6 +47,21 @@ function ClassroomDetail() {
   if (loading || !classData || !userData) return <div className="p-10">Loading...</div>;
 
   const isTeacher = userData._id === classData.createdBy._id;
+  const isStudent = userData.role === "User";
+  const alreadyJoined = classData.students.some(s => s._id === userData._id);
+
+  const handleJoinClass = async () => {
+    try {
+      await axios.post(`http://localhost:5000/api/classrooms/${id}/join`, {
+        studentId: userData._id,
+      });
+      alert("You have joined the class successfully!");
+      fetchClassDataLai();
+    } catch (err) {
+      console.error("Join failed", err);
+      alert("Error joining class.");
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -73,12 +88,21 @@ function ClassroomDetail() {
             <p className="text-sm text-gray-600">Teacher: {classData.createdBy.username}</p>
           </div>
 
-          {isTeacher && (
+          {isTeacher ? (
             <div className="flex gap-3">
               <EditClassButton classData={classData} onUpdate={fetchClassDataLai} />
               <DeleteClassButton classId={id} onDeleteSuccess={() => navigate('/library')} />
               <ShareClassButton classId={id} />
             </div>
+          ) : (
+            isStudent && !alreadyJoined && (
+              <button
+                onClick={handleJoinClass}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold"
+              >
+                Join Class
+              </button>
+            )
           )}
         </div>
 

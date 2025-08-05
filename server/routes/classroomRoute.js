@@ -112,4 +112,28 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// ✅ Học sinh tham gia lớp học
+router.post('/:id/join', async (req, res) => {
+  try {
+    const { studentId } = req.body;
+    const classroom = await Classroom.findById(req.params.id);
+
+    if (!classroom) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    // Nếu chưa tham gia mới thêm
+    if (!classroom.students.includes(studentId)) {
+      classroom.students.push(studentId);
+      await classroom.save();
+    }
+
+    res.json({ message: 'Joined class successfully' });
+  } catch (err) {
+    console.error('Lỗi tham gia lớp:', err);
+    res.status(500).json({ error: 'Không thể tham gia lớp' });
+  }
+});
+
+
 module.exports = router;

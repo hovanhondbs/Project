@@ -39,7 +39,7 @@ function SearchResults({ results }) {
             {results.classes.map((cls) => (
               <Link
                 key={cls._id}
-                to={`/class/${cls._id}`}
+                to={`/classes/${cls._id}`}
                 className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-green-400 transition-all duration-300"
               >
                 <div className="flex justify-between text-sm text-gray-600 mb-2">
