@@ -17,20 +17,26 @@ router.get("/", async (req, res) => {
     });
 
     // ✅ Tính streak liên tiếp
+    // ✅ Tính streak liên tiếp, reset nếu ngắt quãng
     let streak = 0;
     let currentDate = new Date();
     currentDate.setUTCHours(0, 0, 0, 0);
-    currentDate.setUTCHours(currentDate.getUTCHours() + 7); // VN time
+    currentDate.setUTCHours(currentDate.getUTCHours() + 7); // giờ VN
 
-    while (true) {
-      const dateStr = currentDate.toISOString().split("T")[0];
-      if (fireDays.includes(dateStr)) {
+    let expectedDate = currentDate.toISOString().split("T")[0];
+
+    for (let day of fireDays) {
+      if (day === expectedDate) {
         streak++;
-        currentDate.setDate(currentDate.getDate() - 1);
-      } else {
-        break;
-      }
+      // Lùi lại 1 ngày để kiểm tra tiếp
+      currentDate.setDate(currentDate.getDate() - 1);
+      expectedDate = currentDate.toISOString().split("T")[0];
+    } else {
+     // Nếu không khớp ngày mong đợi => bị ngắt chuỗi
+      break;
     }
+  }
+
 
     res.json({ fireDays, streak });
   } catch (err) {
@@ -41,9 +47,6 @@ router.get("/", async (req, res) => {
 
 // ✅ POST để ghi log khi học xong
 router.post("/complete", async (req, res) => {
-   console.log("=== DEBUG BODY ===");
-  console.log("typeof req.body:", typeof req.body);  // 👈 kiểm tra kiểu
-  console.log("req.body:", req.body);    
   try {
     const { userId } = req.body;
     const now = new Date();
