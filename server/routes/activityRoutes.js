@@ -41,6 +41,9 @@ router.get("/", async (req, res) => {
 
 // ✅ POST để ghi log khi học xong
 router.post("/complete", async (req, res) => {
+   console.log("=== DEBUG BODY ===");
+  console.log("typeof req.body:", typeof req.body);  // 👈 kiểm tra kiểu
+  console.log("req.body:", req.body);    
   try {
     const { userId } = req.body;
     const now = new Date();

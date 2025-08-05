@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import {useNavigate, useParams } from 'react-router-dom';
 import {
   FaArrowLeft, FaArrowRight
 } from 'react-icons/fa';
@@ -14,60 +14,63 @@ import Sidebar from '../components/Sidebar';
 
 
 function FlashcardSetDetail() {
-  const location = useLocation();
   const navigate = useNavigate();
   const avatarRef = useRef();
   const { id } = useParams();
 
-  const storedUserId = localStorage.getItem("userId");
+  
   const [userData, setUserData] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [set, setSet] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const handleInputChange = (e) => setSearchTerm(e.target.value);
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && searchTerm.trim()) {
+      navigate('/search', { state: { query: searchTerm } });
+    }
+  };
+  useEffect(() => {
+  const storedUserId = localStorage.getItem("userId");
+  if (!storedUserId) return;
+
+  axios.get(`http://localhost:5000/api/user/${storedUserId}`)
+    .then(res => setUserData(res.data))
+    .catch(err => console.error("Lỗi lấy user info:", err))
+    .finally(() => setLoading(false));
+}, []);
 
   useEffect(() => {
-    if (!storedUserId) return;
-    axios.get(`http://localhost:5000/api/user/${storedUserId}`)
-      .then(res => setUserData(res.data))
-      .catch(err => console.error("Lỗi lấy user info:", err))
-      .finally(() => setLoading(false));
-  }, [storedUserId]);
+  const storedUserId = localStorage.getItem("userId");
 
-  useEffect(() => {
-    const fetchSet = async () => {
-      try {
-        const res = await axios.get(`http://localhost:5000/api/flashcards/${id}`);
-        setSet(res.data);
+  const fetchSet = async () => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/flashcards/${id}`);
+      setSet(res.data);
 
-        // ✅ Ghi lại vào danh sách recentSetIds
-        if (res.data?._id) {
-          let recentList = JSON.parse(localStorage.getItem("recentSetIds")) || [];
+      if (res.data?._id) {
+        let recentList = JSON.parse(localStorage.getItem("recentSetIds")) || [];
+        recentList = recentList.filter(setId => setId !== res.data._id);
+        recentList.unshift(res.data._id);
+        recentList = recentList.slice(0, 5);
+        localStorage.setItem("recentSetIds", JSON.stringify(recentList));
 
-          // Xoá nếu đã có
-          recentList = recentList.filter(setId => setId !== res.data._id);
-
-          // Thêm mới vào đầu
-          recentList.unshift(res.data._id);
-
-          // Giới hạn 5 bộ
-          recentList = recentList.slice(0, 5);
-
-          localStorage.setItem("recentSetIds", JSON.stringify(recentList));
-          // ✅ Gửi recent lên MongoDB
-if (storedUserId && res.data._id) {
-  axios.put(`http://localhost:5000/api/user/${storedUserId}/recent-view`, {
-    setId: res.data._id
-  }).catch(err => console.error("Lỗi lưu recent lên DB:", err));
-}
-
+        // ✅ Gửi lên DB nếu có storedUserId
+        if (storedUserId && res.data._id) {
+          axios.put(`http://localhost:5000/api/user/${storedUserId}/recent-view`, {
+            setId: res.data._id
+          }).catch(err => console.error("Lỗi lưu recent lên DB:", err));
         }
-      } catch (error) {
-        console.error('Lỗi khi lấy dữ liệu chi tiết:', error);
       }
-    };
-    fetchSet();
-  }, [id]);
+    } catch (error) {
+      console.error('Lỗi khi lấy dữ liệu chi tiết:', error);
+    }
+  };
+
+  fetchSet();
+}, [id]);
+
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -107,7 +110,11 @@ if (storedUserId && res.data._id) {
       {/* Main content */}
       <main className="flex-1 p-8">
         <div className="flex items-center justify-between mb-6">
-            <SearchInput />
+            <SearchInput
+              value={searchTerm}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+            />
             <UserMenu
                 avatarRef={avatarRef}
                 dropdownOpen={dropdownOpen}

@@ -9,19 +9,21 @@ router.get('/', async (req, res) => {
   if (!query) return res.json({ flashcards: [], classes: [] });
 
   try {
-    const regex = new RegExp(`^${query}$`, 'i'); // khớp chính xác
+    // const regex = new RegExp(`^${query}$`, 'i');
+    const regex = new RegExp(query, 'i');
     const conditions = [{ name: { $regex: regex } }];
 
-    // ✅ Nếu query là ObjectId hợp lệ, thì thêm điều kiện tìm theo _id
     if (mongoose.Types.ObjectId.isValid(query)) {
       conditions.push({ _id: query });
     }
 
     const flashcards = await FlashcardSet.find({
       title: { $regex: regex }
-    });
+    }).populate('userId', 'username'); // ✅ đúng field
 
-    const classes = await Classroom.find({ $or: conditions });
+    const classes = await Classroom.find({ $or: conditions })
+      .populate('createdBy', 'username') // ✅ đúng tên field
+      .populate('students');
 
     res.json({ flashcards, classes });
   } catch (err) {

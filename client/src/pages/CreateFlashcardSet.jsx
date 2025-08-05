@@ -21,7 +21,14 @@ function CreateFlashcardSet() {
   const [errors, setErrors] = useState({}); // ✅ dùng object
 
   const userId = localStorage.getItem('userId');
+  const [searchTerm, setSearchTerm] = useState('');
 
+  const handleInputChange = (e) => setSearchTerm(e.target.value);
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && searchTerm.trim()) {
+      navigate('/search', { state: { query: searchTerm } });
+    }
+  };
   useEffect(() => {
     if (!userId) {
       setLoading(false);
@@ -180,7 +187,11 @@ function CreateFlashcardSet() {
       <Sidebar />
       <main className="flex-1 p-8 relative">
         <div className="flex items-center justify-between mb-6 relative">
-          <SearchInput />
+          <SearchInput
+            value={searchTerm}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+          />
           <UserMenu
             avatarRef={avatarRef}
             dropdownOpen={dropdownOpen}

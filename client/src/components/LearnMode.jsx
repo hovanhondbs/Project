@@ -5,7 +5,8 @@ import KetQuaHocTap from './KetQuaHocTap';
 import UserMenu from '../components/UserMenu';
 import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
-import logLearningActivity from './ActivityLogger'; // 👈 Gọi log ở đây
+import logLearningActivity from '../components/ActivityLogger';
+
 
 function LearnMode() {
   const { id } = useParams();

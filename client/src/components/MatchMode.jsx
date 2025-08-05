@@ -5,8 +5,7 @@ import axios from 'axios';
 import UserMenu from '../components/UserMenu';
 import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
-import logLearningActivity from "./ActivityLogger";
-
+import logLearningActivity from '../components/ActivityLogger';
 
 function MatchMode() {
   const { id } = useParams();

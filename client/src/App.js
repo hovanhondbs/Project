@@ -14,7 +14,7 @@ import MatchMode from './components/MatchMode';
 import AchievementsPage from './pages/AchievementsPage';
 import CreateClassPage from './pages/CreateClassPage';
 import ClassroomDetail from './pages/ClassroomDetail';
-
+import SearchPage from './pages/SearchPage';
 
 function App() {
   return (
@@ -36,6 +36,7 @@ function App() {
         <Route path="/dashboard-teacher" element={<Dashboardteacher />} />
         <Route path="/create-class" element={<CreateClassPage />} />
         <Route path="/classes/:id" element={<ClassroomDetail />} />
+        <Route path="/search" element={<SearchPage />} />
       </Routes>
     </BrowserRouter>
   );

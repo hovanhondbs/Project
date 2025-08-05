@@ -12,4 +12,4 @@ const logLearningActivity = async () => {
   }
 };
 
-export default logLearningActivity;
+export default logLearningActivity; // ✅ Xuất mặc định đúng

@@ -18,6 +18,14 @@ function UserLibrary() {
 
   const storedUserId = localStorage.getItem("userId");
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const handleInputChange = (e) => setSearchTerm(e.target.value);
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && searchTerm.trim()) {
+      navigate('/search', { state: { query: searchTerm } });
+    }
+  };
+
   // Lấy user info
   useEffect(() => {
     if (!storedUserId) {
@@ -79,7 +87,11 @@ function UserLibrary() {
       <main className="flex-1 p-8">
         {/* Topbar */}
         <div className="flex items-center justify-between mb-6">
-          <SearchInput />
+          <SearchInput
+              value={searchTerm}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+          />
           <UserMenu
             avatarRef={avatarRef}
             dropdownOpen={dropdownOpen}

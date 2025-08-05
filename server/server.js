@@ -33,6 +33,7 @@ const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 👉 Kết nối route API activity logger
+app.use(express.json());
 const activityRoutes = require("./routes/activityRoutes");
 app.use("/api/activity", activityRoutes);
 const classroomRoutes = require('./routes/classroomRoute');

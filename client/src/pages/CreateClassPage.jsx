@@ -9,14 +9,19 @@ function CreateClassPage() {
   const [className, setClassName] = useState('');
   const [description, setDescription] = useState('');
   const [nameError, setNameError] = useState(false);
-  const [descError, setDescError] = useState(false); // ✅ thêm error cho description
   const navigate = useNavigate();
 
   const avatarRef = useRef();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
-
+  const [searchTerm, setSearchTerm] = useState('');
+  const handleInputChange = (e) => setSearchTerm(e.target.value);
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && searchTerm.trim()) {
+      navigate('/search', { state: { query: searchTerm } });
+    }
+  };
   useEffect(() => {
     const userId = localStorage.getItem("userId");
     if (!userId) return setLoading(false);
@@ -43,13 +48,6 @@ function CreateClassPage() {
       valid = false;
     } else {
       setNameError(false);
-    }
-
-    if (!description.trim()) {
-      setDescError(true);
-      valid = false;
-    } else {
-      setDescError(false);
     }
 
     if (!valid) return;
@@ -81,7 +79,11 @@ function CreateClassPage() {
       <main className="flex-1 p-8 flex flex-col items-center">
         {/* Topbar */}
         <div className="flex items-center justify-between mb-6 w-full max-w-6xl">
-          <SearchInput />
+          <SearchInput
+            value={searchTerm}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+        />
           <UserMenu
             avatarRef={avatarRef}
             dropdownOpen={dropdownOpen}
@@ -116,9 +118,7 @@ function CreateClassPage() {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className={`w-full px-5 py-3 rounded-lg text-lg border ${
-                descError ? 'border-red-500' : 'border-gray-300'
-              }`}
+              className="w-full px-5 py-3 rounded-lg text-lg border border-gray-300"
               placeholder="Enter class description"
               rows={4}
             />
