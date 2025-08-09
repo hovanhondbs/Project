@@ -3,61 +3,107 @@ const router = express.Router();
 const ActivityLog = require("../models/ActivityLog");
 const { ObjectId } = require("mongodb");
 
-// ✅ GET logs theo userId (không giới hạn theo tháng)
+// Hàm chuyển đổi ngày sang định dạng YYYY-MM-DD theo múi giờ VN
+const toVNDateString = (date) => {
+  const dateVN = new Date(date);
+  dateVN.setUTCHours(dateVN.getUTCHours() + 7);
+  return dateVN.toISOString().split("T")[0];
+};
+
+// GET logs theo userId
 router.get("/", async (req, res) => {
   try {
     const { userId } = req.query;
-    const logs = await ActivityLog.find({ userId: new ObjectId(userId) }).sort({ date: -1 });
+    if (!userId) return res.status(400).json({ message: "Thiếu userId" });
 
-    // Chuyển log thành chuỗi định dạng YYYY-MM-DD theo giờ VN
-    const fireDays = logs.map(log => {
-      const dateVN = new Date(log.date);
-      dateVN.setUTCHours(dateVN.getUTCHours() + 7);
-      return dateVN.toISOString().split("T")[0]; // "2025-08-03"
-    });
+    const logs = await ActivityLog.find({ userId: new ObjectId(userId) })
+      .sort({ date: -1 });
 
-    // ✅ Tính streak liên tiếp
-    // ✅ Tính streak liên tiếp, reset nếu ngắt quãng
-    let streak = 0;
-    let currentDate = new Date();
-    currentDate.setUTCHours(0, 0, 0, 0);
-    currentDate.setUTCHours(currentDate.getUTCHours() + 7); // giờ VN
-
-    let expectedDate = currentDate.toISOString().split("T")[0];
-
-    for (let day of fireDays) {
-      if (day === expectedDate) {
-        streak++;
-      // Lùi lại 1 ngày để kiểm tra tiếp
-      currentDate.setDate(currentDate.getDate() - 1);
-      expectedDate = currentDate.toISOString().split("T")[0];
-    } else {
-     // Nếu không khớp ngày mong đợi => bị ngắt chuỗi
-      break;
+    // Lấy danh sách ngày đã học (không trùng lặp)
+    const uniqueDates = [...new Set(logs.map(log => toVNDateString(log.date)))];
+    
+    // Tính current streak (chuỗi ngày học liên tiếp gần nhất)
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let tempStreak = 0;
+    
+    const todayVN = new Date();
+    todayVN.setUTCHours(todayVN.getUTCHours() + 7);
+    todayVN.setUTCHours(0, 0, 0, 0);
+    
+    let checkDate = new Date(todayVN);
+    
+    // Kiểm tra streak hiện tại
+    while (true) {
+      const dateStr = toVNDateString(checkDate);
+      if (uniqueDates.includes(dateStr)) {
+        currentStreak++;
+        tempStreak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
     }
-  } 
+    
+    // Tính longest streak (chuỗi dài nhất mọi thời đại)
+    let prevDate = null;
+    tempStreak = 0;
+    
+    for (let i = 0; i < uniqueDates.length; i++) {
+      const currentDate = new Date(uniqueDates[i]);
+      
+      if (prevDate) {
+        const diffDays = Math.floor((prevDate - currentDate) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) {
+          tempStreak++;
+        } else {
+          longestStreak = Math.max(longestStreak, tempStreak);
+          tempStreak = 1;
+        }
+      } else {
+        tempStreak = 1;
+      }
+      
+      prevDate = currentDate;
+      longestStreak = Math.max(longestStreak, tempStreak);
+    }
 
-
-    res.json({ fireDays, streak });
+    res.json({ 
+      fireDays: uniqueDates,
+      currentStreak,
+      longestStreak 
+    });
   } catch (err) {
     console.error("❌ Lỗi lấy hoạt động:", err);
     res.status(500).json({ message: "Lỗi server" });
   }
 });
 
-// ✅ POST để ghi log khi học xong
+// POST để ghi log khi học xong
 router.post("/complete", async (req, res) => {
   try {
     const { userId } = req.body;
+    if (!userId) return res.status(400).json({ message: "Thiếu userId" });
+
     const now = new Date();
     now.setUTCHours(now.getUTCHours() + 7); // Múi giờ VN
-    const todayStr = now.toISOString().split("T")[0];
+    now.setUTCHours(0, 0, 0, 0); // Đặt về 00:00:00
+    
+    // Kiểm tra xem đã có log cho ngày hôm nay chưa
+    const existingLog = await ActivityLog.findOne({
+      userId: new ObjectId(userId),
+      date: { 
+        $gte: new Date(now.toISOString().split("T")[0] + "T00:00:00Z"),
+        $lt: new Date(now.toISOString().split("T")[0] + "T23:59:59Z")
+      }
+    });
 
-    await ActivityLog.updateOne(
-      { userId: new ObjectId(userId), date: todayStr },
-      { $setOnInsert: { userId: new ObjectId(userId), date: new Date(todayStr) } },
-      { upsert: true }
-    );
+    if (!existingLog) {
+      await ActivityLog.create({
+        userId: new ObjectId(userId),
+        date: now
+      });
+    }
 
     res.json({ message: "Ghi log thành công" });
   } catch (err) {
