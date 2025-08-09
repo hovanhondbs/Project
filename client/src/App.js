@@ -37,6 +37,8 @@ function App() {
         <Route path="/create-class" element={<CreateClassPage />} />
         <Route path="/classes/:id" element={<ClassroomDetail />} />
         <Route path="/search" element={<SearchPage />} />
+     
+    
       </Routes>
     </BrowserRouter>
   );
