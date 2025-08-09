@@ -51,14 +51,17 @@ router.put('/:id/recent-view', async (req, res) => {
 router.get('/:id/recents', async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('recentSets.setId')
-      .exec();
-
-    if (!user) return res.status(404).json({ error: 'User not found' });
+      .populate({
+        path: 'recentSets.setId',
+        populate: { 
+          path: 'userId', 
+          select: 'username avatar' // ✅ Lấy cả avatar nếu có
+        }
+      });
 
     res.json(user.recentSets);
   } catch (err) {
-    res.status(500).json({ error: 'Lỗi lấy recentSets' });
+    res.status(500).json({ error: err.message });
   }
 });
 

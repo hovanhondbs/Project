@@ -10,7 +10,7 @@ function SearchPage() {
   const initialQuery = location.state?.query || '';
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState(null);
-
+  
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
     try {
@@ -37,7 +37,9 @@ function SearchPage() {
             if (e.key === 'Enter') handleSearch();
           }}
         />
+        
         <SearchResults results={results} />
+          
       </main>
     </div>
   );
