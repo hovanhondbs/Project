@@ -109,14 +109,6 @@ function LoginPage() {
             Log in
           </button>
         </div>
-
-        {/* Footer */}
-        <p className="text-sm text-gray-500 mt-6 text-center">
-          By logging in, you accept our
-          <button className="underline text-blue-600 ml-1" onClick={() => alert('Xem Terms')}>Terms</button>
-          &
-          <button className="underline text-blue-600 ml-1" onClick={() => alert('Xem Privacy')}>Privacy</button>.
-        </p>
       </div>
     </div>
   );

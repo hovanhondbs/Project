@@ -20,6 +20,21 @@ function AchievementsPage() {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  const [searchTerm, setSearchTerm] = useState('');
+    
+  const handleInputChange = (e) => setSearchTerm(e.target.value);
+  
+  const handleKeyDown = async (e) => {
+    if (e.key === 'Enter') {
+      if (!searchTerm.trim()) return;
+  
+      navigate('/search', { state: { query: searchTerm } });
+    }
+  };
+
+
+
+
   useEffect(() => {
     const userId = localStorage.getItem('userId');
     if (!userId) return;
@@ -116,7 +131,11 @@ function AchievementsPage() {
       <Sidebar />
       <main className="flex-1 p-8">
         <div className="flex justify-between items-center mb-8">
-          <SearchInput />
+          <SearchInput
+            value={searchTerm}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+          />
           <UserMenu
             avatarRef={avatarRef}
             dropdownOpen={dropdownOpen}

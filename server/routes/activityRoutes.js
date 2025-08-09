@@ -35,7 +35,7 @@ router.get("/", async (req, res) => {
      // Nếu không khớp ngày mong đợi => bị ngắt chuỗi
       break;
     }
-  }
+  } 
 
 
     res.json({ fireDays, streak });

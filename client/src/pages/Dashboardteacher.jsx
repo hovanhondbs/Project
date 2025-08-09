@@ -54,10 +54,10 @@ function Dashboardteacher() {
       <main className="flex-1 p-8">
         <div className="flex items-center justify-between mb-6">
           <SearchInput
-      value={searchTerm}
-      onChange={handleInputChange}
-      onKeyDown={handleKeyDown}
-    />
+            value={searchTerm}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+          />
           <UserMenu avatarRef={avatarRef} dropdownOpen={dropdownOpen} setDropdownOpen={setDropdownOpen} userData={userData} loading={loading} handleLogout={handleLogout} />
         </div>
 

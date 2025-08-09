@@ -24,6 +24,13 @@ function MatchMode() {
   const [loading, setLoading] = useState(true);
   const storedUserId = localStorage.getItem("userId");
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const handleInputChange = (e) => setSearchTerm(e.target.value);
+  const handleKeyDown = (e) => {
+      if (e.key === 'Enter' && searchTerm.trim()) {
+        navigate('/search', { state: { query: searchTerm } });
+      }
+    };
   useEffect(() => {
     axios.get(`http://localhost:5000/api/flashcards/${id}`)
       .then(res => {
@@ -94,7 +101,11 @@ function MatchMode() {
       <main className="flex-1 p-6">
         {/* Topbar */}
         <div className="flex items-center justify-between mb-6">
-            <SearchInput />
+            <SearchInput
+              value={searchTerm}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+          />
             <UserMenu
                 avatarRef={avatarRef}
                 dropdownOpen={dropdownOpen}
