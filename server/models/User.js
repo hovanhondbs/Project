@@ -1,3 +1,4 @@
+// models/User.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -6,18 +7,14 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   dob: { type: Date },
   role: { type: String, enum: ['User', 'Teacher'], default: 'User' },
-  avatar: { type: String },   
-  // ✅ Thêm recentSets ở đây
+
+  // ✅ THÊM TRƯỜNG NÀY
+  avatar: { type: String, default: '' },
+
   recentSets: [
     {
-      setId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'flashcardsets'
-      },
-      lastViewed: {
-        type: Date,
-        default: Date.now
-      }
+      setId: { type: mongoose.Schema.Types.ObjectId, ref: 'flashcardsets' },
+      lastViewed: { type: Date, default: Date.now }
     }
   ]
 });

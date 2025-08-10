@@ -1,7 +1,22 @@
 // routes/userRoute.js
 const express = require('express');
-const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const User = require('../models/User');
+
+const router = express.Router();
+
+// Tạo thư mục lưu avatar nếu chưa có
+const AVATAR_DIR = path.join(__dirname, '..', 'uploads', 'avatars');
+if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, AVATAR_DIR),
+  filename: (req, file, cb) =>
+    cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`)
+});
+const upload = multer({ storage });
 
 /**
  * GET /api/user/:id
@@ -10,7 +25,7 @@ const User = require('../models/User');
 router.get('/:id', async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .select('username email role avatar'); // <-- thêm avatar
+      .select('username email role avatar');
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json(user);
   } catch (err) {
@@ -19,8 +34,35 @@ router.get('/:id', async (req, res) => {
 });
 
 /**
+ * PUT /api/user/:id
+ * Cập nhật avatar (file hoặc URL) + username
+ */
+router.put('/:id', upload.single('avatar'), async (req, res) => {
+  try {
+    const { username, avatarUrl } = req.body;
+    const update = {};
+
+    if (username?.trim()) update.username = username.trim();
+
+    if (req.file) {
+      // Lưu path tương đối để FE hiển thị qua http://localhost:5000/<path>
+      update.avatar = path.posix.join('uploads', 'avatars', req.file.filename);
+    } else if (avatarUrl) {
+      update.avatar = avatarUrl;
+    }
+
+    const user = await User.findByIdAndUpdate(req.params.id, update, { new: true })
+                           .select('username email role avatar');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
  * PUT /api/user/:id/dob
- * Cập nhật ngày sinh + vai trò (nếu có)
  */
 router.put('/:id/dob', async (req, res) => {
   try {
@@ -39,7 +81,6 @@ router.put('/:id/dob', async (req, res) => {
 
 /**
  * PUT /api/user/:id/recent-view
- * Cập nhật danh sách recentSets
  */
 router.put('/:id/recent-view', async (req, res) => {
   try {
@@ -62,14 +103,13 @@ router.put('/:id/recent-view', async (req, res) => {
 
 /**
  * GET /api/user/:id/recents
- * Trả recentSets đã populate, lấy cả avatar của người tạo set
  */
 router.get('/:id/recents', async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .populate({
         path: 'recentSets.setId',
-        populate: { path: 'userId', select: 'username avatar' } // <-- avatar ở đây
+        populate: { path: 'userId', select: 'username avatar' }
       })
       .select('recentSets');
 

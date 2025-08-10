@@ -28,6 +28,7 @@ require('dotenv').config(); // ✅ đã đúng
 const userRoute = require('./routes/userRoute');
 app.use('/api/user', userRoute);
 
+
 // Cho phép truy cập ảnh đã upload
 const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
