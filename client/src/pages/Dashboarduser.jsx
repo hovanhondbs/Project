@@ -1,4 +1,3 @@
-// src/pages/Dashboarduser.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -6,8 +5,10 @@ import UserMenu from '../components/UserMenu';
 import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
 
-const API_BASE = 'http://localhost:5000';
-const abs = (src) => {
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+
+// helper chung
+const absDash = (src) => {
   if (!src) return '';
   let s = String(src).replace(/\\/g, '/').trim();
   if (/^(https?:|blob:|data:)/i.test(s)) return s;
@@ -15,6 +16,7 @@ const abs = (src) => {
   if (/^\/(static|assets)\//i.test(s)) return s;
   return `${API_BASE}/${s.replace(/^\/+/, '')}`;
 };
+
 function Dashboarduser() {
   const navigate = useNavigate();
   const avatarRef = useRef();
@@ -24,7 +26,7 @@ function Dashboarduser() {
   const [loading, setLoading] = useState(true);
   const [recentSets, setRecentSets] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const handleInputChange = (e) => setSearchTerm(e.target.value);
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && searchTerm.trim()) {
@@ -42,16 +44,16 @@ function Dashboarduser() {
       try {
         const [userRes, recentRes] = await Promise.all([
           axios.get(`${API_BASE}/api/user/${storedUserId}`),
-          axios.get(`${API_BASE}/api/user/${storedUserId}/recents`)
+          axios.get(`${API_BASE}/api/user/${storedUserId}/recents`),
         ]);
 
         const processed = (recentRes.data || [])
-          .filter(it => it.setId && typeof it.setId === 'object')
-          .map(it => ({
+          .filter((it) => it.setId && typeof it.setId === 'object')
+          .map((it) => ({
             ...it.setId,
             userId: it.setId.userId || { username: 'Unknown', avatar: '' },
             lastViewed: it.lastViewed,
-            createdAt: it.setId.createdAt || new Date()
+            createdAt: it.setId.createdAt || new Date(),
           }));
 
         setUserData(userRes.data);
@@ -103,7 +105,7 @@ function Dashboarduser() {
             userData={userData}
             loading={loading}
             handleLogout={handleLogout}
-            onProfileUpdated={(u) => setUserData(u)} 
+            onProfileUpdated={(u) => setUserData(u)}
           />
         </div>
 
@@ -121,9 +123,13 @@ function Dashboarduser() {
             {recentSets.map((set) => {
               const creatorName = set.userId?.username || 'Unknown';
               const creatorInitial = creatorName.charAt(0).toUpperCase();
-              const creatorAvatar = abs(set.userId?.avatar || '');
+              const creatorAvatar = absDash(set.userId?.avatar || '');
+
               return (
-                <div key={set._id} className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-blue-400 transition-all duration-300">
+                <div
+                  key={set._id}
+                  className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-blue-400 transition-all duration-300"
+                >
                   <Link to={`/flashcards/${set._id}`} className="block">
                     <div className="flex justify-between items-center text-sm text-gray-600 mb-2">
                       <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">

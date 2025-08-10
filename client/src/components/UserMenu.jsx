@@ -1,4 +1,3 @@
-// src/components/UserMenu.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { FaBell, FaTrophy, FaCog, FaSignOutAlt, FaTimes } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
@@ -15,30 +14,23 @@ import avatar5 from '../assets/image/avatar5.jpeg';
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
 // ✅ Chuẩn hoá URL ảnh trả về từ BE
-// ✅ Chuẩn hoá URL ảnh trả về từ BE
-const toAbsUrl = (src, { bust = false } = {}) => {
-  const fallback = fallbackAvatar;
-  if (!src) return fallback;
-
-  // Chuẩn hoá: đổi backslash -> slash
+const toAbsUrl = (src) => {
+  if (!src) return fallbackAvatar;
   let s = String(src).replace(/\\/g, '/').trim();
 
   // 1) URL đầy đủ / blob / data
   if (/^(https?:|blob:|data:)/i.test(s)) return s;
 
-  // 2) Ảnh do server lưu: "uploads/..." hoặc "/uploads/..."
+  // 2) uploads từ server (xử lý cả '/uploads' và 'uploads') → luôn prefix API_BASE
   if (/^\/?uploads\//i.test(s)) {
-    s = s.replace(/^\/+/, '');                      // bỏ / đầu
-    const url = `${API_BASE}/${s}`;
-    return bust ? `${url}?t=${Date.now()}` : url;   // cache-busting khi cần
+    return `${API_BASE}/${s.replace(/^\/+/, '')}`;
   }
 
-  // 3) Asset tĩnh FE (bắt đầu bằng “/static”, “/assets”...): giữ nguyên
+  // 3) Asset tĩnh FE (/static|/assets) → giữ nguyên
   if (/^\/(static|assets)\//i.test(s)) return s;
 
-  // 4) Trường hợp tương đối khác -> prefix server
-  const url = `${API_BASE}/${s.replace(/^\/+/, '')}`;
-  return bust ? `${url}?t=${Date.now()}` : url;
+  // 4) Trường hợp tương đối khác → prefix server
+  return `${API_BASE}/${s.replace(/^\/+/, '')}`;
 };
 
 function UserMenu({
@@ -48,12 +40,11 @@ function UserMenu({
   userData,
   loading,
   handleLogout,
-  // ✅ callback mới (tùy chọn)
   onProfileUpdated = () => {},
 }) {
   const [showSettings, setShowSettings] = useState(false);
   const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState(''); // tên hiển thị ngay ở menu
+  const [displayName, setDisplayName] = useState('');
   const [preview, setPreview] = useState(fallbackAvatar);
   const [menuAvatar, setMenuAvatar] = useState(fallbackAvatar);
   const [useSuggested, setUseSuggested] = useState(false);
@@ -78,8 +69,8 @@ function UserMenu({
 
   const onPickSuggested = (imgUrl) => {
     setUseSuggested(true);
-    setSuggestedUrl(imgUrl);            // imgUrl là asset tĩnh của FE
-    setPreview(imgUrl);                 // hiển thị ngay trong modal
+    setSuggestedUrl(imgUrl);
+    setPreview(imgUrl);
     setFileObj(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -106,7 +97,8 @@ function UserMenu({
       });
 
       const updated = res.data;
-      const abs = toAbsUrl(updated.avatarb, { bust: true });
+      // thêm cache-busting để chắc chắn ảnh mới hiển thị
+      const abs = `${toAbsUrl(updated.avatar)}?t=${Date.now()}`;
 
       // ✅ cập nhật UI ngay lập tức
       setMenuAvatar(abs);
@@ -143,7 +135,6 @@ function UserMenu({
                 <p className="text-sm text-gray-500">Loading...</p>
               ) : (
                 <>
-                  {/* dùng displayName để phản chiếu ngay */}
                   <p className="font-semibold text-sm">{displayName}</p>
                   <p className="text-xs text-gray-500">{userData?.email}</p>
                 </>
@@ -199,7 +190,7 @@ function UserMenu({
                   </div>
 
                   <div className="flex gap-2">
-                    {[avatar1, avatar2, avatar3, avatar4, avatar5].map((img, i) => (
+                    {suggestedAvatars.map((img, i) => (
                       <img
                         key={i}
                         src={img}
