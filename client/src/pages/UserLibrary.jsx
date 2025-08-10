@@ -5,6 +5,17 @@ import UserMenu from '../components/UserMenu';
 import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
 
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+// Chuẩn hoá URL avatar (xử lý http(s), blob, /uploads, uploads, assets…)
+const abs = (src) => {
+  if (!src) return '';
+  let s = String(src).replace(/\\/g, '/').trim();
+ if (/^(https?:|blob:|data:)/i.test(s)) return s;
+  if (/^\/?uploads\//i.test(s)) return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+  if (/^\/(static|assets)\//i.test(s)) return s;
+  return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+};
+
 function UserLibrary() {
   const navigate = useNavigate();
   const avatarRef = useRef();
@@ -118,6 +129,7 @@ function UserLibrary() {
             userData={userData}
             loading={loading}
             handleLogout={handleLogout}
+            onProfileUpdated={(u) => setUserData(u)}
           />
         </div>
 
@@ -191,10 +203,25 @@ function UserLibrary() {
                             {set.cards?.length || 0} Terms
                           </span>
                           <div className="flex items-center">
-                            <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs mr-2">
-                              {getAvatarInitials(userData?.username)}
-                            </div>
-                            <span>{userData?.username || "You"}</span>
+                            
+                            {(() => {
+                              const name = set.userId?.username || userData?.username || 'You';
+                              const url  = abs(set.userId?.avatar || userData?.avatar || '');
+                              const initials = getAvatarInitials(name);
+                              return url ? (
+                                <img
+                                  src={url}
+                                  alt={name}
+                                 className="w-6 h-6 rounded-full mr-2 object-cover border border-gray-200"
+                                  onError={(e)=>{ e.currentTarget.style.display='none'; }}
+                                />
+                              ) : (
+                                <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs mr-2">
+                                  {initials}
+                                </div>
+                              );
+                            })()}
+                            <span>{set.userId?.username || userData?.username || "You"}</span>
                           </div>
                         </div>
                         <h3 className="text-xl font-semibold text-blue-700 truncate mb-1">{set.title}</h3>

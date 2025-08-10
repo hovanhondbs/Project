@@ -14,27 +14,46 @@ import avatar5 from '../assets/image/avatar5.jpeg';
 // CRA env
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
-// Chuẩn hoá URL ảnh từ BE
-const toAbsUrl = (src) => {
-  if (!src) return fallbackAvatar;
-  const s = String(src);
+// ✅ Chuẩn hoá URL ảnh trả về từ BE
+// ✅ Chuẩn hoá URL ảnh trả về từ BE
+const toAbsUrl = (src, { bust = false } = {}) => {
+  const fallback = fallbackAvatar;
+  if (!src) return fallback;
 
-  // đã là url đầy đủ / blob / data
+  // Chuẩn hoá: đổi backslash -> slash
+  let s = String(src).replace(/\\/g, '/').trim();
+
+  // 1) URL đầy đủ / blob / data
   if (/^(https?:|blob:|data:)/i.test(s)) return s;
 
-  // static FE (/assets, /static)
-  if (s.startsWith('/')) return s;
+  // 2) Ảnh do server lưu: "uploads/..." hoặc "/uploads/..."
+  if (/^\/?uploads\//i.test(s)) {
+    s = s.replace(/^\/+/, '');                      // bỏ / đầu
+    const url = `${API_BASE}/${s}`;
+    return bust ? `${url}?t=${Date.now()}` : url;   // cache-busting khi cần
+  }
 
-  // file BE (uploads/...)
-  if (s.startsWith('uploads/')) return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+  // 3) Asset tĩnh FE (bắt đầu bằng “/static”, “/assets”...): giữ nguyên
+  if (/^\/(static|assets)\//i.test(s)) return s;
 
-  // fallback
-  return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+  // 4) Trường hợp tương đối khác -> prefix server
+  const url = `${API_BASE}/${s.replace(/^\/+/, '')}`;
+  return bust ? `${url}?t=${Date.now()}` : url;
 };
 
-function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading, handleLogout }) {
+function UserMenu({
+  avatarRef,
+  dropdownOpen,
+  setDropdownOpen,
+  userData,
+  loading,
+  handleLogout,
+  // ✅ callback mới (tùy chọn)
+  onProfileUpdated = () => {},
+}) {
   const [showSettings, setShowSettings] = useState(false);
   const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState(''); // tên hiển thị ngay ở menu
   const [preview, setPreview] = useState(fallbackAvatar);
   const [menuAvatar, setMenuAvatar] = useState(fallbackAvatar);
   const [useSuggested, setUseSuggested] = useState(false);
@@ -44,11 +63,11 @@ function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading,
 
   const suggestedAvatars = [avatar1, avatar2, avatar3, avatar4, avatar5];
 
-  // nạp dữ liệu ban đầu
   useEffect(() => {
     if (!userData) return;
-    setUsername(userData.username || '');
     const abs = toAbsUrl(userData.avatar);
+    setUsername(userData.username || '');
+    setDisplayName(userData.username || '');
     setPreview(abs);
     setMenuAvatar(abs);
     setUseSuggested(false);
@@ -59,8 +78,8 @@ function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading,
 
   const onPickSuggested = (imgUrl) => {
     setUseSuggested(true);
-    setSuggestedUrl(imgUrl);     // ảnh tĩnh FE
-    setPreview(imgUrl);          // xem trước ngay trong modal
+    setSuggestedUrl(imgUrl);            // imgUrl là asset tĩnh của FE
+    setPreview(imgUrl);                 // hiển thị ngay trong modal
     setFileObj(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -71,13 +90,12 @@ function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading,
     setFileObj(f);
     setUseSuggested(false);
     setSuggestedUrl('');
-    setPreview(URL.createObjectURL(f)); // xem trước tức thì
+    setPreview(URL.createObjectURL(f));
   };
 
   const handleSave = async () => {
     try {
       if (!userData?._id) return;
-
       const form = new FormData();
       form.append('username', username || '');
       if (fileObj) form.append('avatar', fileObj);
@@ -87,15 +105,20 @@ function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      // cập nhật UI ngay
       const updated = res.data;
-      const abs = toAbsUrl(updated.avatar);
+      const abs = toAbsUrl(updated.avatarb, { bust: true });
+
+      // ✅ cập nhật UI ngay lập tức
       setMenuAvatar(abs);
       setPreview(abs);
-      setUsername(updated.username || username);
+      setDisplayName(updated.username || username || displayName);
 
+      // ✅ đóng modal + menu
       setShowSettings(false);
       setDropdownOpen(false);
+
+      // ✅ báo cho parent cập nhật state toàn cục
+      onProfileUpdated(updated);
     } catch (err) {
       console.error('Update profile error:', err);
       alert('Update failed.');
@@ -120,8 +143,8 @@ function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading,
                 <p className="text-sm text-gray-500">Loading...</p>
               ) : (
                 <>
-                  {/* hiển thị username từ state để thấy ngay tên mới */}
-                  <p className="font-semibold text-sm">{username}</p>
+                  {/* dùng displayName để phản chiếu ngay */}
+                  <p className="font-semibold text-sm">{displayName}</p>
                   <p className="text-xs text-gray-500">{userData?.email}</p>
                 </>
               )}
@@ -169,8 +192,7 @@ function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading,
                     />
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
+                      className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <span className="text-white text-xs">Upload</span>
                     </button>
                     <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileChange} className="hidden" />

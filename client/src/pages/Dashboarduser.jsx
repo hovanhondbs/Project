@@ -7,7 +7,14 @@ import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
 
 const API_BASE = 'http://localhost:5000';
-
+const abs = (src) => {
+  if (!src) return '';
+  let s = String(src).replace(/\\/g, '/').trim();
+  if (/^(https?:|blob:|data:)/i.test(s)) return s;
+  if (/^\/?uploads\//i.test(s)) return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+  if (/^\/(static|assets)\//i.test(s)) return s;
+  return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+};
 function Dashboarduser() {
   const navigate = useNavigate();
   const avatarRef = useRef();
@@ -17,7 +24,7 @@ function Dashboarduser() {
   const [loading, setLoading] = useState(true);
   const [recentSets, setRecentSets] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-
+  
   const handleInputChange = (e) => setSearchTerm(e.target.value);
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && searchTerm.trim()) {
@@ -96,6 +103,7 @@ function Dashboarduser() {
             userData={userData}
             loading={loading}
             handleLogout={handleLogout}
+            onProfileUpdated={(u) => setUserData(u)} 
           />
         </div>
 
@@ -113,10 +121,7 @@ function Dashboarduser() {
             {recentSets.map((set) => {
               const creatorName = set.userId?.username || 'Unknown';
               const creatorInitial = creatorName.charAt(0).toUpperCase();
-              const creatorAvatar = set.userId?.avatar
-                ? (set.userId.avatar.startsWith('http') ? set.userId.avatar : `${API_BASE}/${set.userId.avatar}`)
-                : '';
-
+              const creatorAvatar = abs(set.userId?.avatar || '');
               return (
                 <div key={set._id} className="bg-white border border-gray-200 rounded-xl p-5 shadow hover:shadow-lg hover:border-blue-400 transition-all duration-300">
                   <Link to={`/flashcards/${set._id}`} className="block">
