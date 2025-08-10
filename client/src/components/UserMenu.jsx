@@ -10,38 +10,18 @@ import avatar3 from '../assets/image/avatar3.jpeg';
 import avatar4 from '../assets/image/avatar4.jpeg';
 import avatar5 from '../assets/image/avatar5.jpeg';
 
-// CRA env
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
-// ✅ Chuẩn hoá URL ảnh trả về từ BE
 const toAbsUrl = (src) => {
   if (!src) return fallbackAvatar;
   let s = String(src).replace(/\\/g, '/').trim();
-
-  // 1) URL đầy đủ / blob / data
   if (/^(https?:|blob:|data:)/i.test(s)) return s;
-
-  // 2) uploads từ server (xử lý cả '/uploads' và 'uploads') → luôn prefix API_BASE
-  if (/^\/?uploads\//i.test(s)) {
-    return `${API_BASE}/${s.replace(/^\/+/, '')}`;
-  }
-
-  // 3) Asset tĩnh FE (/static|/assets) → giữ nguyên
+  if (/^\/?uploads\//i.test(s)) return `${API_BASE}/${s.replace(/^\/+/, '')}`;
   if (/^\/(static|assets)\//i.test(s)) return s;
-
-  // 4) Trường hợp tương đối khác → prefix server
   return `${API_BASE}/${s.replace(/^\/+/, '')}`;
 };
 
-function UserMenu({
-  avatarRef,
-  dropdownOpen,
-  setDropdownOpen,
-  userData,
-  loading,
-  handleLogout,
-  onProfileUpdated = () => {},
-}) {
+export default function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading, handleLogout, onProfileUpdated = () => {} }) {
   const [showSettings, setShowSettings] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -50,6 +30,8 @@ function UserMenu({
   const [useSuggested, setUseSuggested] = useState(false);
   const [suggestedUrl, setSuggestedUrl] = useState('');
   const [fileObj, setFileObj] = useState(null);
+  const [nameError, setNameError] = useState('');
+  const [checking, setChecking] = useState(false);
   const fileInputRef = useRef();
 
   const suggestedAvatars = [avatar1, avatar2, avatar3, avatar4, avatar5];
@@ -64,8 +46,33 @@ function UserMenu({
     setUseSuggested(false);
     setSuggestedUrl('');
     setFileObj(null);
+    setNameError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [userData, showSettings]);
+
+  // ✅ Kiểm tra trùng tên khi blur hoặc nhấn Save
+  const checkUsername = async (name) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) { setNameError('Name cannot be empty'); return false; }
+    if (trimmed.length < 3) { setNameError('Name must be at least 3 characters'); return false; }
+    if (trimmed === userData?.username) { setNameError(''); return true; }
+    try {
+      setChecking(true);
+      const res = await axios.get(`${API_BASE}/api/user/check-username`, { params: { username: trimmed } });
+      if (!res.data?.available) {
+        setNameError('The name has already been used');
+        return false;
+      }
+      setNameError('');
+      return true;
+    } catch (e) {
+      console.error('check-username error', e);
+      setNameError('Cannot verify the name. Please try again');
+      return false;
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const onPickSuggested = (imgUrl) => {
     setUseSuggested(true);
@@ -85,35 +92,31 @@ function UserMenu({
   };
 
   const handleSave = async () => {
+    // Check trùng tên trước
+    const ok = await checkUsername(username);
+    if (!ok) return;
+
     try {
       if (!userData?._id) return;
       const form = new FormData();
-      form.append('username', username || '');
+      form.append('username', (username || '').trim());
       if (fileObj) form.append('avatar', fileObj);
       else if (useSuggested && suggestedUrl) form.append('avatarUrl', suggestedUrl);
 
-      const res = await axios.put(`${API_BASE}/api/user/${userData._id}`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const res = await axios.put(`${API_BASE}/api/user/${userData._id}`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
 
       const updated = res.data;
-      // thêm cache-busting để chắc chắn ảnh mới hiển thị
-      const abs = `${toAbsUrl(updated.avatar)}?t=${Date.now()}`;
-
-      // ✅ cập nhật UI ngay lập tức
+      const abs = `${toAbsUrl(updated.avatar)}?t=${Date.now()}`; // cache-busting
       setMenuAvatar(abs);
       setPreview(abs);
       setDisplayName(updated.username || username || displayName);
-
-      // ✅ đóng modal + menu
       setShowSettings(false);
       setDropdownOpen(false);
-
-      // ✅ báo cho parent cập nhật state toàn cục
       onProfileUpdated(updated);
     } catch (err) {
       console.error('Update profile error:', err);
-      alert('Update failed.');
+      if (err?.response?.status === 409) setNameError('The name has already been used');
+      else alert('Update failed.');
     }
   };
 
@@ -146,10 +149,7 @@ function UserMenu({
                   <FaTrophy /> Achievements
                 </Link>
               </li>
-              <li
-                className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer"
-                onClick={() => setShowSettings(true)}
-              >
+              <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer" onClick={() => setShowSettings(true)}>
                 <FaCog /> Settings
               </li>
               <li onClick={handleLogout} className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
@@ -191,13 +191,7 @@ function UserMenu({
 
                   <div className="flex gap-2">
                     {suggestedAvatars.map((img, i) => (
-                      <img
-                        key={i}
-                        src={img}
-                        alt={`Avatar ${i + 1}`}
-                        className="w-10 h-10 rounded-full cursor-pointer hover:border-2 hover:border-blue-400 object-cover"
-                        onClick={() => onPickSuggested(img)}
-                      />
+                      <img key={i} src={img} alt={`Avatar ${i + 1}`} className="w-10 h-10 rounded-full cursor-pointer hover:border-2 hover:border-blue-400 object-cover" onClick={() => onPickSuggested(img)} />
                     ))}
                   </div>
                 </div>
@@ -209,16 +203,16 @@ function UserMenu({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  onBlur={() => checkUsername(username)}
+                  className={`w-full px-3 py-2 border rounded-lg ${nameError ? 'border-red-500' : ''}`}
                 />
+                {nameError && <p className="text-red-600 text-xs mt-1">{nameError}</p>}
               </div>
 
               <div className="flex justify-end gap-2 pt-4">
-                <button onClick={() => setShowSettings(false)} className="px-4 py-2 rounded-lg border border-gray-300">
-                  Cancel
-                </button>
-                <button onClick={handleSave} className="px-4 py-2 rounded-lg bg-blue-600 text-white">
-                  Save
+                <button onClick={() => setShowSettings(false)} className="px-4 py-2 rounded-lg border border-gray-300">Cancel</button>
+                <button onClick={handleSave} disabled={checking || !!nameError} className={`px-4 py-2 rounded-lg text-white ${checking || nameError ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                  {checking ? 'Checking…' : 'Save'}
                 </button>
               </div>
             </div>
@@ -229,4 +223,3 @@ function UserMenu({
   );
 }
 
-export default UserMenu;

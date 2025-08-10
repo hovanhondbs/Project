@@ -1,4 +1,3 @@
-// models/User.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -7,10 +6,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   dob: { type: Date },
   role: { type: String, enum: ['User', 'Teacher'], default: 'User' },
-
-  // ✅ THÊM TRƯỜNG NÀY
   avatar: { type: String, default: '' },
-
   recentSets: [
     {
       setId: { type: mongoose.Schema.Types.ObjectId, ref: 'flashcardsets' },
@@ -18,5 +14,8 @@ const userSchema = new mongoose.Schema({
     }
   ]
 });
+
+// ✅ Unique index cho username (không phân biệt hoa/thường)
+userSchema.index({ username: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
 
 module.exports = mongoose.model('User', userSchema);
