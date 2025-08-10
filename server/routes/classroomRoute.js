@@ -3,11 +3,11 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Classroom = require('../models/Classroom');
 
-// ✅ Load để tránh lỗi populate FlashcardSet
-require('../models/FlashcardSet');
+// Ensure models are loaded (in case of circular use elsewhere)
 require('../models/User');
+require('../models/FlashcardSet');
 
-// Tạo lớp mới
+// Create a class
 router.post('/', async (req, res) => {
   try {
     const { name, description, createdBy } = req.body;
@@ -17,9 +17,7 @@ router.post('/', async (req, res) => {
       createdBy: new mongoose.Types.ObjectId(createdBy),
     });
 
-    if (existing) {
-      return res.status(400).json({ error: 'Tên lớp đã tồn tại' });
-    }
+    if (existing) return res.status(400).json({ error: 'Tên lớp đã tồn tại' });
 
     const classroom = new Classroom({
       name,
@@ -35,12 +33,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Lấy danh sách lớp của giáo viên
+// 🔹 Classes created by a teacher (tab: Classes)
 router.get('/by-user/:userId', async (req, res) => {
   try {
     const classrooms = await Classroom.find({
       createdBy: new mongoose.Types.ObjectId(req.params.userId),
-    });
+    })
+      .select('name description students createdBy createdAt')
+      .populate({ path: 'createdBy', select: 'username avatar' }); // ✅ include avatar
+
     res.json(classrooms);
   } catch (err) {
     console.error('Lỗi tải danh sách lớp:', err);
@@ -48,12 +49,15 @@ router.get('/by-user/:userId', async (req, res) => {
   }
 });
 
-// ✅ Lấy lớp đã tham gia (cho User)
+// 🔹 Classes the user joined (tab: My Classes)
 router.get('/joined/:userId', async (req, res) => {
   try {
     const classrooms = await Classroom.find({
       students: new mongoose.Types.ObjectId(req.params.userId),
-    }).populate('createdBy', 'username');
+    })
+      .select('name description students createdBy createdAt')
+      .populate({ path: 'createdBy', select: 'username avatar' }); // ✅ include avatar
+
     res.json(classrooms);
   } catch (err) {
     console.error('Lỗi lấy lớp đã tham gia:', err);
@@ -61,16 +65,16 @@ router.get('/joined/:userId', async (req, res) => {
   }
 });
 
-// Lấy thông tin lớp theo ID
+// Get class by id
 router.get('/:id', async (req, res) => {
   try {
     const classroom = await Classroom.findById(req.params.id)
-      .populate('createdBy', 'username')
+      .select('name description students createdBy createdAt flashcards')
+      .populate({ path: 'createdBy', select: 'username avatar' }) // ✅ include avatar here too
       .populate('students', 'username email')
       .populate('flashcards');
 
     if (!classroom) return res.status(404).json({ error: 'Không tìm thấy lớp' });
-
     res.json(classroom);
   } catch (err) {
     console.error('Lỗi lấy lớp theo ID:', err);
@@ -78,21 +82,16 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Cập nhật lớp học
+// Update class
 router.put('/:id', async (req, res) => {
   try {
     const { name, description } = req.body;
-
     const updated = await Classroom.findByIdAndUpdate(
       req.params.id,
       { name, description },
       { new: true }
     );
-
-    if (!updated) {
-      return res.status(404).json({ error: 'Class not found' });
-    }
-
+    if (!updated) return res.status(404).json({ error: 'Class not found' });
     res.json(updated);
   } catch (err) {
     console.error('Lỗi cập nhật lớp:', err);
@@ -100,30 +99,14 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Xoá lớp
-router.delete('/:id', async (req, res) => {
-  try {
-    const deleted = await Classroom.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'Class not found' });
-    res.json({ message: 'Class deleted successfully' });
-  } catch (err) {
-    console.error('Lỗi xoá lớp:', err);
-    res.status(500).json({ error: 'Không thể xoá lớp' });
-  }
-});
-
-// ✅ Học sinh tham gia lớp học
+// Student join class
 router.post('/:id/join', async (req, res) => {
   try {
     const { studentId } = req.body;
     const classroom = await Classroom.findById(req.params.id);
+    if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
-    if (!classroom) {
-      return res.status(404).json({ error: 'Class not found' });
-    }
-
-    // Nếu chưa tham gia mới thêm
-    if (!classroom.students.includes(studentId)) {
+    if (!classroom.students.map(String).includes(String(studentId))) {
       classroom.students.push(studentId);
       await classroom.save();
     }
@@ -134,6 +117,5 @@ router.post('/:id/join', async (req, res) => {
     res.status(500).json({ error: 'Không thể tham gia lớp' });
   }
 });
-
 
 module.exports = router;
