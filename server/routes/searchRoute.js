@@ -4,12 +4,12 @@ const mongoose = require('mongoose');
 const FlashcardSet = require('../models/FlashcardSet');
 const Classroom = require('../models/Classroom');
 
+// GET /api/search?query=...
 router.get('/', async (req, res) => {
   const query = req.query.query?.trim();
   if (!query) return res.json({ flashcards: [], classes: [] });
 
   try {
-    // const regex = new RegExp(`^${query}$`, 'i');
     const regex = new RegExp(query, 'i');
     const conditions = [{ name: { $regex: regex } }];
 
@@ -17,12 +17,14 @@ router.get('/', async (req, res) => {
       conditions.push({ _id: query });
     }
 
-    const flashcards = await FlashcardSet.find({
-      title: { $regex: regex }
-    }).populate('userId', 'username'); // ✅ đúng field
+    // ⚠️ Quan trọng: populate kèm 'avatar'
+    const flashcards = await FlashcardSet.find({ title: { $regex: regex } })
+      .select('title description cards userId createdAt')
+      .populate({ path: 'userId', select: 'username avatar' });
 
     const classes = await Classroom.find({ $or: conditions })
-      .populate('createdBy', 'username') // ✅ đúng tên field
+      .select('name description students createdBy createdAt')
+      .populate({ path: 'createdBy', select: 'username avatar' })
       .populate('students');
 
     res.json({ flashcards, classes });
