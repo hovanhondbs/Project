@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   dob: { type: Date },
   role: { type: String, enum: ['User', 'Teacher'], default: 'User' },
-
+  avatar: { type: String },   
   // ✅ Thêm recentSets ở đây
   recentSets: [
     {
