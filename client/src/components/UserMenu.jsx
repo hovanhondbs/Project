@@ -1,3 +1,4 @@
+// src/components/UserMenu.jsx — English UI, allow avatar-only update, unique name check
 import React, { useState, useRef, useEffect } from 'react';
 import { FaBell, FaTrophy, FaCog, FaSignOutAlt, FaTimes } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
@@ -12,16 +13,25 @@ import avatar5 from '../assets/image/avatar5.jpeg';
 
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
+// Normalize avatar URL from API
 const toAbsUrl = (src) => {
   if (!src) return fallbackAvatar;
   let s = String(src).replace(/\\/g, '/').trim();
-  if (/^(https?:|blob:|data:)/i.test(s)) return s;
-  if (/^\/?uploads\//i.test(s)) return `${API_BASE}/${s.replace(/^\/+/, '')}`;
-  if (/^\/(static|assets)\//i.test(s)) return s;
-  return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+  if (/^(https?:|blob:|data:)/i.test(s)) return s; // full url/blob/data
+  if (/^\/?uploads\//i.test(s)) return `${API_BASE}/${s.replace(/^\/+/, '')}`; // server uploads
+  if (/^\/(static|assets)\//i.test(s)) return s; // FE static assets
+  return `${API_BASE}/${s.replace(/^\/+/, '')}`; // other relatives
 };
 
-export default function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, userData, loading, handleLogout, onProfileUpdated = () => {} }) {
+export default function UserMenu({
+  avatarRef,
+  dropdownOpen,
+  setDropdownOpen,
+  userData,
+  loading,
+  handleLogout,
+  onProfileUpdated = () => {},
+}) {
   const [showSettings, setShowSettings] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -50,24 +60,25 @@ export default function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, use
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [userData, showSettings]);
 
-  // ✅ Kiểm tra trùng tên khi blur hoặc nhấn Save
+  const willChangeName = () => {
+    const t = (username || '').trim();
+    return !!t && t !== userData?.username;
+  };
+
+  // Only validate when user actually changes the name
   const checkUsername = async (name) => {
     const trimmed = (name || '').trim();
-    if (!trimmed) { setNameError('Name cannot be empty'); return false; }
-    if (trimmed.length < 3) { setNameError('Name must be at least 3 characters'); return false; }
-    if (trimmed === userData?.username) { setNameError(''); return true; }
+    if (!willChangeName()) { setNameError(''); return true; }
+    if (trimmed.length < 3) { setNameError('Username must be at least 3 characters'); return false; }
     try {
       setChecking(true);
       const res = await axios.get(`${API_BASE}/api/user/check-username`, { params: { username: trimmed } });
-      if (!res.data?.available) {
-        setNameError('The name has already been used');
-        return false;
-      }
+      if (!res.data?.available) { setNameError('This username is already taken'); return false; }
       setNameError('');
       return true;
     } catch (e) {
       console.error('check-username error', e);
-      setNameError('Cannot verify the name. Please try again');
+      setNameError('Could not verify username. Please try again');
       return false;
     } finally {
       setChecking(false);
@@ -92,31 +103,37 @@ export default function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, use
   };
 
   const handleSave = async () => {
-    // Check trùng tên trước
-    const ok = await checkUsername(username);
-    if (!ok) return;
+    // Validate name only if changing it
+    if (willChangeName()) {
+      const ok = await checkUsername(username);
+      if (!ok) return;
+    } else {
+      setNameError('');
+    }
 
     try {
       if (!userData?._id) return;
       const form = new FormData();
-      form.append('username', (username || '').trim());
+      if (willChangeName()) form.append('username', (username || '').trim()); // send only if changed
       if (fileObj) form.append('avatar', fileObj);
       else if (useSuggested && suggestedUrl) form.append('avatarUrl', suggestedUrl);
 
-      const res = await axios.put(`${API_BASE}/api/user/${userData._id}`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await axios.put(`${API_BASE}/api/user/${userData._id}`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
 
       const updated = res.data;
       const abs = `${toAbsUrl(updated.avatar)}?t=${Date.now()}`; // cache-busting
       setMenuAvatar(abs);
       setPreview(abs);
-      setDisplayName(updated.username || username || displayName);
+      setDisplayName(updated.username || displayName);
       setShowSettings(false);
       setDropdownOpen(false);
       onProfileUpdated(updated);
     } catch (err) {
       console.error('Update profile error:', err);
-      if (err?.response?.status === 409) setNameError('The name has already been used');
-      else alert('Update failed.');
+      if (err?.response?.status === 409) setNameError('This username is already taken');
+      else alert('Update failed. Please try again.');
     }
   };
 
@@ -172,7 +189,7 @@ export default function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, use
 
             <div className="space-y-4">
               <div>
-                <label className="block mb-2">Profile Picture</label>
+                <label className="block mb-2">Profile picture</label>
                 <div className="flex items-center gap-4">
                   <div className="relative group">
                     <img
@@ -198,20 +215,25 @@ export default function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, use
               </div>
 
               <div>
-                <label className="block mb-2">Username</label>
+                <label className="block mb-2">Username <span className="text-gray-400 text-xs">(leave empty to keep current)</span></label>
                 <input
                   type="text"
+                  placeholder={userData?.username || ''}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   onBlur={() => checkUsername(username)}
-                  className={`w-full px-3 py-2 border rounded-lg ${nameError ? 'border-red-500' : ''}`}
+                  className={`w-full px-3 py-2 border rounded-lg ${willChangeName() && nameError ? 'border-red-500' : ''}`}
                 />
-                {nameError && <p className="text-red-600 text-xs mt-1">{nameError}</p>}
+                {willChangeName() && nameError && <p className="text-red-600 text-xs mt-1">{nameError}</p>}
               </div>
 
               <div className="flex justify-end gap-2 pt-4">
                 <button onClick={() => setShowSettings(false)} className="px-4 py-2 rounded-lg border border-gray-300">Cancel</button>
-                <button onClick={handleSave} disabled={checking || !!nameError} className={`px-4 py-2 rounded-lg text-white ${checking || nameError ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                <button
+                  onClick={handleSave}
+                  disabled={checking || (willChangeName() && !!nameError)}
+                  className={`px-4 py-2 rounded-lg text-white ${checking || (willChangeName() && nameError) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
                   {checking ? 'Checking…' : 'Save'}
                 </button>
               </div>
@@ -222,4 +244,3 @@ export default function UserMenu({ avatarRef, dropdownOpen, setDropdownOpen, use
     </div>
   );
 }
-
