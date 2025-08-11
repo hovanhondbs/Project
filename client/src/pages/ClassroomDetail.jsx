@@ -1,4 +1,4 @@
-// ClassroomDetail.jsx
+// src/pages/ClassroomDetail.jsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
@@ -9,57 +9,81 @@ import EditClassButton from '../components/EditClassButton';
 import DeleteClassButton from '../components/DeleteClassButton';
 import ShareClassButton from '../components/ShareClassButton';
 
-function ClassroomDetail() {
+const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+
+export default function ClassroomDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+
   const [classData, setClassData] = useState(null);
   const [userData, setUserData] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("assignments");
+  const [activeTab, setActiveTab] = useState('assignments');
+  const [pending, setPending] = useState(false);
+  const [bell, setBell] = useState(0);
 
-  const storedUserId = localStorage.getItem("userId");
+  const userId = localStorage.getItem('userId');
 
-  const fetchClassDataLai = () => {
-    axios.get(`http://localhost:5000/api/classrooms/${id}`)
-      .then(res => setClassData(res.data))
-      .catch(err => console.error("Failed to fetch classroom info", err));
+  const fetchClass = async () => {
+    const res = await axios.get(`${API}/api/classrooms/${id}`);
+    setClassData(res.data);
+    return res.data;
+  };
+
+  const fetchUser = async () => {
+    if (!userId) return null;
+    const res = await axios.get(`${API}/api/user/${userId}`);
+    setUserData(res.data);
+    return res.data;
   };
 
   useEffect(() => {
-    if (!storedUserId) return;
-
-    axios.get(`http://localhost:5000/api/user/${storedUserId}`)
-      .then(res => setUserData(res.data))
-      .catch(err => console.error("Failed to fetch user info", err));
-  }, [storedUserId]);
-
-  useEffect(() => {
-    fetchClassDataLai();
-    setLoading(false);
+    (async () => {
+      await Promise.all([fetchUser(), fetchClass()]);
+      setLoading(false);
+    })().catch(console.error);
   }, [id]);
+
+  // mark pending for student
+  useEffect(() => {
+    if (!classData || !userId) return;
+    const mine = (classData.joinRequests || []).find(
+      r => (r.student?._id || r.student)?.toString() === userId && r.status === 'pending'
+    );
+    setPending(!!mine);
+  }, [classData, userId]);
+
+  // bell badge for teacher
+  useEffect(() => {
+    if (!userData || !classData) return;
+    const isTeacher = userData._id === classData.createdBy._id;
+    if (!isTeacher) return;
+    axios.get(`${API}/api/classrooms/pending-count/${userData._id}`)
+      .then(r => setBell(r.data?.count || 0))
+      .catch(() => setBell(0));
+  }, [userData, classData]);
 
   const handleLogout = () => {
     localStorage.clear();
-    window.location.href = "/";
+    window.location.href = '/';
   };
 
   if (loading || !classData || !userData) return <div className="p-10">Loading...</div>;
 
   const isTeacher = userData._id === classData.createdBy._id;
-  const isStudent = userData.role === "User";
+  const isStudent = userData.role === 'User';
   const alreadyJoined = classData.students.some(s => s._id === userData._id);
+  const canSeeTabs = isTeacher || alreadyJoined;
 
-  const handleJoinClass = async () => {
+  // student requests to join (approval needed)
+  const requestJoin = async () => {
     try {
-      await axios.post(`http://localhost:5000/api/classrooms/${id}/join`, {
-        studentId: userData._id,
-      });
-      alert("You have joined the class successfully!");
-      fetchClassDataLai();
-    } catch (err) {
-      console.error("Join failed", err);
-      alert("Error joining class.");
+      await axios.post(`${API}/api/classrooms/${id}/request-join`, { studentId: userData._id });
+      setPending(true);
+      await fetchClass();
+    } catch {
+      alert('Error sending join request.');
     }
   };
 
@@ -78,6 +102,7 @@ function ClassroomDetail() {
             userData={userData}
             loading={loading}
             handleLogout={handleLogout}
+            bellCount={bell}
           />
         </div>
 
@@ -90,67 +115,67 @@ function ClassroomDetail() {
 
           {isTeacher ? (
             <div className="flex gap-3">
-              <EditClassButton classData={classData} onUpdate={fetchClassDataLai} />
+              <EditClassButton classData={classData} onUpdate={fetchClass} />
               <DeleteClassButton classId={id} onDeleteSuccess={() => navigate('/library')} />
               <ShareClassButton classId={id} />
             </div>
           ) : (
             isStudent && !alreadyJoined && (
-              <button
-                onClick={handleJoinClass}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold"
-              >
-                Join Class
-              </button>
+              pending ? (
+                <button disabled className="bg-gray-300 text-gray-700 px-5 py-2 rounded-lg font-semibold cursor-not-allowed">
+                  Pending approval
+                </button>
+              ) : (
+                <button onClick={requestJoin} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold">
+                  Join Class
+                </button>
+              )
             )
           )}
         </div>
 
-        {/* Tabs */}
-        <div className="mb-6 border-b border-gray-300">
-          <nav className="flex gap-6">
-            <button
-              onClick={() => setActiveTab("assignments")}
-              className={`pb-2 font-medium ${activeTab === "assignments" ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}
-            >
-              Assignments
-            </button>
-            <button
-              onClick={() => setActiveTab("members")}
-              className={`pb-2 font-medium ${activeTab === "members" ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}
-            >
-              Members
-            </button>
-            <button
-              onClick={() => setActiveTab("results")}
-              className={`pb-2 font-medium ${activeTab === "results" ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}
-            >
-              Results
-            </button>
-          </nav>
-        </div>
+        {/* Tabs: HIDDEN until student joined */}
+        {canSeeTabs ? (
+          <>
+            <div className="mb-6 border-b border-gray-300">
+              <nav className="flex gap-6">
+                <button
+                  onClick={() => setActiveTab('assignments')}
+                  className={`pb-2 font-medium ${activeTab === 'assignments' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                >
+                  Assignments
+                </button>
+                <button
+                  onClick={() => setActiveTab('members')}
+                  className={`pb-2 font-medium ${activeTab === 'members' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                >
+                  Members
+                </button>
+                <button
+                  onClick={() => setActiveTab('results')}
+                  className={`pb-2 font-medium ${activeTab === 'results' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                >
+                  Results
+                </button>
+              </nav>
+            </div>
 
-        {/* Tab content */}
-        <div>
-          {activeTab === "assignments" && (
-            <p className="text-gray-500">No assignments yet.</p>
-          )}
-
-          {activeTab === "members" && (
-            <ul className="list-disc list-inside space-y-1 text-gray-700">
-              {classData.students.map((s) => (
-                <li key={s._id}>{s.username}</li>
-              ))}
-            </ul>
-          )}
-
-          {activeTab === "results" && (
-            <p className="text-gray-500">Tracking feature will be updated soon.</p>
-          )}
-        </div>
+            <div>
+              {activeTab === 'assignments' && <p className="text-gray-500">No assignments yet.</p>}
+              {activeTab === 'members' && (
+                <ul className="list-disc list-inside space-y-1 text-gray-700">
+                  {classData.students.map((s) => <li key={s._id}>{s.username}</li>)}
+                </ul>
+              )}
+              {activeTab === 'results' && <p className="text-gray-500">Tracking feature will be updated soon.</p>}
+            </div>
+          </>
+        ) : (
+          <div className="text-gray-500 italic">
+            You need to join the class to see assignments and members.
+          </div>
+        )}
       </main>
     </div>
   );
 }
-
-export default ClassroomDetail;

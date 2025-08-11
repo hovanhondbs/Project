@@ -1,4 +1,4 @@
-// src/components/UserMenu.jsx — English UI, allow avatar-only update, unique name check
+// src/components/UserMenu.jsx — notifications + avatar editor + click-outside for bell & avatar
 import React, { useState, useRef, useEffect } from 'react';
 import { FaBell, FaTrophy, FaCog, FaSignOutAlt, FaTimes } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
@@ -13,26 +13,36 @@ import avatar5 from '../assets/image/avatar5.jpeg';
 
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
-// Normalize avatar URL from API
 const toAbsUrl = (src) => {
   if (!src) return fallbackAvatar;
   let s = String(src).replace(/\\/g, '/').trim();
-  if (/^(https?:|blob:|data:)/i.test(s)) return s; // full url/blob/data
-  if (/^\/?uploads\//i.test(s)) return `${API_BASE}/${s.replace(/^\/+/, '')}`; // server uploads
-  if (/^\/(static|assets)\//i.test(s)) return s; // FE static assets
-  return `${API_BASE}/${s.replace(/^\/+/, '')}`; // other relatives
+  if (/^(https?:|blob:|data:)/i.test(s)) return s;
+  if (/^\/?uploads\//i.test(s)) return `${API_BASE}/${s.replace(/^\/+/, '')}`;
+  if (/^\/(static|assets)\//i.test(s)) return s;
+  return `${API_BASE}/${s.replace(/^\/+/, '')}`;
 };
 
 export default function UserMenu({
-  avatarRef,
+  avatarRef,                 // optional (từ parent); nếu không có, component tự tạo ref
   dropdownOpen,
   setDropdownOpen,
   userData,
   loading,
   handleLogout,
   onProfileUpdated = () => {},
+  bellCount = 0,
 }) {
+  // Refs
+  const bellRef = useRef(null);
+  const localAvatarRef = useRef(null);
+  const menuRef = avatarRef || localAvatarRef; // dùng ref truyền vào hoặc ref nội bộ
+
+  // UI states
   const [showSettings, setShowSettings] = useState(false);
+  const [showNotif, setShowNotif] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+
+  // Profile editor
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [preview, setPreview] = useState(fallbackAvatar);
@@ -46,6 +56,7 @@ export default function UserMenu({
 
   const suggestedAvatars = [avatar1, avatar2, avatar3, avatar4, avatar5];
 
+  // Hydrate from userData
   useEffect(() => {
     if (!userData) return;
     const abs = toAbsUrl(userData.avatar);
@@ -60,12 +71,27 @@ export default function UserMenu({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [userData, showSettings]);
 
+  // Click-outside cho bell dropdown & avatar dropdown
+  useEffect(() => {
+    const onDocMouseDown = (e) => {
+      // bell
+      if (bellRef.current && !bellRef.current.contains(e.target)) {
+        setShowNotif(false);
+      }
+      // avatar menu
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [menuRef, setDropdownOpen]);
+
   const willChangeName = () => {
     const t = (username || '').trim();
     return !!t && t !== userData?.username;
   };
 
-  // Only validate when user actually changes the name
   const checkUsername = async (name) => {
     const trimmed = (name || '').trim();
     if (!willChangeName()) { setNameError(''); return true; }
@@ -76,8 +102,7 @@ export default function UserMenu({
       if (!res.data?.available) { setNameError('This username is already taken'); return false; }
       setNameError('');
       return true;
-    } catch (e) {
-      console.error('check-username error', e);
+    } catch {
       setNameError('Could not verify username. Please try again');
       return false;
     } finally {
@@ -103,7 +128,6 @@ export default function UserMenu({
   };
 
   const handleSave = async () => {
-    // Validate name only if changing it
     if (willChangeName()) {
       const ok = await checkUsername(username);
       if (!ok) return;
@@ -114,7 +138,7 @@ export default function UserMenu({
     try {
       if (!userData?._id) return;
       const form = new FormData();
-      if (willChangeName()) form.append('username', (username || '').trim()); // send only if changed
+      if (willChangeName()) form.append('username', (username || '').trim()); // chỉ gửi nếu đổi
       if (fileObj) form.append('avatar', fileObj);
       else if (useSuggested && suggestedUrl) form.append('avatarUrl', suggestedUrl);
 
@@ -131,16 +155,68 @@ export default function UserMenu({
       setDropdownOpen(false);
       onProfileUpdated(updated);
     } catch (err) {
-      console.error('Update profile error:', err);
       if (err?.response?.status === 409) setNameError('This username is already taken');
       else alert('Update failed. Please try again.');
     }
   };
 
+  // Notifications
+  const toggleNotif = async () => {
+    const willShow = !showNotif;
+    setShowNotif(willShow);
+    if (willShow && userData?._id) {
+      try {
+        const r = await axios.get(`${API_BASE}/api/classrooms/pending-requests/${userData._id}`);
+        setNotifs(r.data || []);
+      } catch {
+        setNotifs([]);
+      }
+    }
+  };
+
   return (
     <div className="flex items-center gap-4 ml-4 relative">
-      <FaBell className="text-xl text-gray-500 hover:text-blue-600 cursor-pointer" />
-      <div className="relative" ref={avatarRef}>
+      {/* Bell + badge + dropdown */}
+      <div className="relative" ref={bellRef}>
+        <FaBell
+          className="text-xl text-gray-500 hover:text-blue-600 cursor-pointer"
+          onClick={toggleNotif}
+        />
+        {bellCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+            {bellCount}
+          </span>
+        )}
+        {showNotif && (
+          <div className="absolute right-0 mt-2 w-80 bg-white border rounded-lg shadow-lg z-20 max-h-96 overflow-y-auto">
+            <div className="px-4 py-2 border-b font-semibold">Notifications</div>
+            {notifs.length === 0 ? (
+              <div className="p-4 text-sm text-gray-500">No new requests</div>
+            ) : (
+              notifs.map((n, i) => (
+                <div key={i} className="px-4 py-3 border-b text-sm flex items-center gap-3">
+                  <img
+                    src={n.studentAvatar ? toAbsUrl(n.studentAvatar) : fallbackAvatar}
+                    alt=""
+                    className="w-8 h-8 rounded-full object-cover"
+                    onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
+                  />
+                  <div>
+                    <p>
+                      <span className="font-semibold">{n.studentName}</span> wants to join{' '}
+                      <span className="font-semibold">{n.className}</span>
+                    </p>
+                    <p className="text-xs text-gray-400">{new Date(n.createdAt).toLocaleString()}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Avatar dropdown */}
+      <div className="relative" ref={menuRef}>
         <img
           src={menuAvatar}
           alt="User avatar"
@@ -166,10 +242,16 @@ export default function UserMenu({
                   <FaTrophy /> Achievements
                 </Link>
               </li>
-              <li className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer" onClick={() => setShowSettings(true)}>
+              <li
+                className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer"
+                onClick={() => setShowSettings(true)}
+              >
                 <FaCog /> Settings
               </li>
-              <li onClick={handleLogout} className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer">
+              <li
+                onClick={handleLogout}
+                className="px-4 py-2 hover:bg-gray-100 flex items-center gap-2 cursor-pointer"
+              >
                 <FaSignOutAlt /> Log out
               </li>
             </ul>
@@ -177,6 +259,7 @@ export default function UserMenu({
         )}
       </div>
 
+      {/* Settings modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -200,22 +283,37 @@ export default function UserMenu({
                     />
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
                       <span className="text-white text-xs">Upload</span>
                     </button>
-                    <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileChange} className="hidden" />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={onFileChange}
+                      className="hidden"
+                    />
                   </div>
 
                   <div className="flex gap-2">
                     {suggestedAvatars.map((img, i) => (
-                      <img key={i} src={img} alt={`Avatar ${i + 1}`} className="w-10 h-10 rounded-full cursor-pointer hover:border-2 hover:border-blue-400 object-cover" onClick={() => onPickSuggested(img)} />
+                      <img
+                        key={i}
+                        src={img}
+                        alt={`Avatar ${i + 1}`}
+                        className="w-10 h-10 rounded-full cursor-pointer hover:border-2 hover:border-blue-400 object-cover"
+                        onClick={() => onPickSuggested(img)}
+                      />
                     ))}
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="block mb-2">Username <span className="text-gray-400 text-xs">(leave empty to keep current)</span></label>
+                <label className="block mb-2">
+                  Username <span className="text-gray-400 text-xs">(leave empty to keep current)</span>
+                </label>
                 <input
                   type="text"
                   placeholder={userData?.username || ''}
@@ -224,15 +322,26 @@ export default function UserMenu({
                   onBlur={() => checkUsername(username)}
                   className={`w-full px-3 py-2 border rounded-lg ${willChangeName() && nameError ? 'border-red-500' : ''}`}
                 />
-                {willChangeName() && nameError && <p className="text-red-600 text-xs mt-1">{nameError}</p>}
+                {willChangeName() && nameError && (
+                  <p className="text-red-600 text-xs mt-1">{nameError}</p>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-4">
-                <button onClick={() => setShowSettings(false)} className="px-4 py-2 rounded-lg border border-gray-300">Cancel</button>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="px-4 py-2 rounded-lg border border-gray-300"
+                >
+                  Cancel
+                </button>
                 <button
                   onClick={handleSave}
                   disabled={checking || (willChangeName() && !!nameError)}
-                  className={`px-4 py-2 rounded-lg text-white ${checking || (willChangeName() && nameError) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  className={`px-4 py-2 rounded-lg text-white ${
+                    checking || (willChangeName() && nameError)
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
                 >
                   {checking ? 'Checking…' : 'Save'}
                 </button>
