@@ -1,8 +1,9 @@
 // src/components/UserMenu.jsx
-import React, { useState, useRef, useEffect } from 'react';
-import { FaBell, FaTrophy, FaCog, FaSignOutAlt, FaTimes } from 'react-icons/fa';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { io } from 'socket.io-client';
+import { FaBell, FaTrophy, FaCog, FaSignOutAlt, FaTimes } from 'react-icons/fa';
 
 import fallbackAvatar from '../assets/icon/20250730_2254_image.png';
 import avatar1 from '../assets/image/avatar1.jpeg';
@@ -12,6 +13,7 @@ import avatar4 from '../assets/image/avatar4.jpeg';
 import avatar5 from '../assets/image/avatar5.jpeg';
 
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+const SOCKET_URL = API_BASE; // chung host với API
 
 const toAbsUrl = (src) => {
   if (!src) return fallbackAvatar;
@@ -29,23 +31,22 @@ export default function UserMenu({
   userData,
   loading,
   handleLogout,
-  bellCount = 0,      // dùng cho giáo viên (pending-requests)
-  onBellChange,       // setter badge cho giáo viên
-  currentClassId,     // optional
-  onApproved,         // optional
+  bellCount = 0,      // dùng cho giáo viên
+  onBellChange,       // setter bell cho giáo viên
+  currentClassId,
+  onApproved,
 }) {
   const navigate = useNavigate();
   const bellRef = useRef(null);
   const localAvatarRef = useRef(null);
   const menuRef = avatarRef || localAvatarRef;
 
-  // UI chuông
   const [showNotif, setShowNotif] = useState(false);
-  const [teacherNotifs, setTeacherNotifs] = useState([]); // danh sách pending cho GV
-  const [studentNotifs, setStudentNotifs] = useState([]); // thông báo duyệt cho HS
+  const [teacherNotifs, setTeacherNotifs] = useState([]);
+  const [studentNotifs, setStudentNotifs] = useState([]);
+  const [studentBadge, setStudentBadge] = useState(0);
   const [actingId, setActingId] = useState(null);
 
-  // Avatar editor
   const [showSettings, setShowSettings] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -58,7 +59,51 @@ export default function UserMenu({
   const fileInputRef = useRef(null);
   const suggestedAvatars = [avatar1, avatar2, avatar3, avatar4, avatar5];
 
-  // ===== Hydrate
+  // ===== Socket
+  const socketRef = useRef(null);
+  const isTeacher = String(userData?.role || '').toLowerCase() === 'teacher';
+
+  useEffect(() => {
+    if (!userData?._id) return;
+    const s = io(SOCKET_URL, { transports: ['websocket'] });
+    socketRef.current = s;
+    s.emit('register', { userId: userData._id });
+
+    // Student: notification realtime
+    const onNotifNew = (payload) => {
+      if (isTeacher) return;
+      setStudentBadge((b) => b + 1);
+      // nếu dropdown đang mở: refetch danh sách để hiển thị mục mới
+      if (showNotif) {
+        axios.get(`${API_BASE}/api/notifications/list/${userData._id}`)
+          .then(r => setStudentNotifs(r.data || []))
+          .catch(() => {});
+      }
+    };
+    s.on('notif:new', onNotifNew);
+
+    // Teacher: có request join mới
+    const onJoinPending = (payload) => {
+      if (!isTeacher) return;
+      // cập nhật badge bằng cách gọi API count để tránh lệch
+      refreshBellForTeacher();
+      if (showNotif) {
+        axios.get(`${API_BASE}/api/classrooms/pending-requests/${userData._id}`)
+          .then(r => setTeacherNotifs(r.data || []))
+          .catch(() => {});
+      }
+    };
+    s.on('join:pending', onJoinPending);
+
+    return () => {
+      s.off('notif:new', onNotifNew);
+      s.off('join:pending', onJoinPending);
+      s.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userData?._id, isTeacher, showNotif]);
+
+  // ===== Hydrate từ userData
   useEffect(() => {
     if (!userData) return;
     const abs = toAbsUrl(userData.avatar);
@@ -73,7 +118,7 @@ export default function UserMenu({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [userData, showSettings]);
 
-  // ===== Click outside
+  // ===== Click-outside
   useEffect(() => {
     const onDocMouseDown = (e) => {
       if (bellRef.current && !bellRef.current.contains(e.target)) setShowNotif(false);
@@ -83,12 +128,9 @@ export default function UserMenu({
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [setDropdownOpen]);
 
-  const isTeacher = String(userData?.role || '').toLowerCase() === 'teacher';
-
-  // ===== Lấy badge cho học sinh (đếm thông báo chưa đọc)
-  const [studentBadge, setStudentBadge] = useState(0);
+  // ===== Badge cho HS (đếm chưa đọc khi load)
   useEffect(() => {
-    if (!userData?._id || isTeacher) return; // HS thôi
+    if (!userData?._id || isTeacher) return;
     axios.get(`${API_BASE}/api/notifications/count/${userData._id}`)
       .then(r => setStudentBadge(r.data?.count || 0))
       .catch(() => setStudentBadge(0));
@@ -101,18 +143,18 @@ export default function UserMenu({
     if (!willShow || !userData?._id) return;
 
     if (isTeacher) {
-      // Giáo viên: danh sách yêu cầu pending
+      // GV: danh sách pending
       try {
         const r = await axios.get(`${API_BASE}/api/classrooms/pending-requests/${userData._id}`);
         setTeacherNotifs(r.data || []);
       } catch { setTeacherNotifs([]); }
     } else {
-      // Học sinh: danh sách thông báo
+      // HS: danh sách thông báo
       try {
         const r = await axios.get(`${API_BASE}/api/notifications/list/${userData._id}`);
         setStudentNotifs(r.data || []);
       } catch { setStudentNotifs([]); }
-      // Auto mark-all-seen cho HS
+      // mark-all-seen -> badge = 0
       try {
         await axios.post(`${API_BASE}/api/notifications/mark-all-seen/${userData._id}`);
         setStudentBadge(0);
@@ -120,7 +162,7 @@ export default function UserMenu({
     }
   };
 
-  // ===== Giáo viên approve/reject
+  // ===== GV approve/reject
   const refreshBellForTeacher = async () => {
     if (!userData?._id) return;
     try {
@@ -149,7 +191,7 @@ export default function UserMenu({
     }
   };
 
-  // ===== Avatar editor helpers (giữ nguyên pattern)
+  // ===== Avatar editor helpers
   const onFileChange = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -185,14 +227,12 @@ export default function UserMenu({
     }
   };
 
-  // ===== UI
   return (
     <div className="flex items-center gap-4 ml-4">
       {/* Chuông */}
       <div className="relative" ref={bellRef}>
         <button onClick={toggleNotif} className="relative p-2 rounded-full hover:bg-gray-100" title="Notifications">
           <FaBell className="text-gray-700" size={20} />
-          {/* Badge: GV dùng bellCount từ props, HS dùng studentBadge */}
           {(isTeacher ? (bellCount > 0) : (studentBadge > 0)) && (
             <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">
               {isTeacher ? bellCount : studentBadge}
@@ -205,7 +245,6 @@ export default function UserMenu({
             <div className="px-4 py-2 border-b font-semibold">Notifications</div>
 
             {isTeacher ? (
-              // ===== GV: danh sách yêu cầu chờ duyệt
               teacherNotifs.length === 0 ? (
                 <div className="p-4 text-sm text-gray-500">No new requests</div>
               ) : (
@@ -236,7 +275,6 @@ export default function UserMenu({
                 ))
               )
             ) : (
-              // ===== HS: danh sách thông báo kết quả duyệt
               studentNotifs.length === 0 ? (
                 <div className="p-4 text-sm text-gray-500">No notifications</div>
               ) : (
@@ -254,7 +292,7 @@ export default function UserMenu({
         )}
       </div>
 
-      {/* Avatar dropdown + Profile editor (giữ nguyên cấu trúc) */}
+      {/* Avatar dropdown + Profile editor (giữ như bạn) */}
       <div className="relative" ref={menuRef}>
         <img
           src={menuAvatar}
@@ -282,18 +320,12 @@ export default function UserMenu({
                 </Link>
               </li>
               <li>
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100"
-                >
+                <button onClick={() => setShowSettings(true)} className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100">
                   <FaCog /> Profile & Avatar
                 </button>
               </li>
               <li>
-                <button
-                  onClick={handleLogout}
-                  className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-red-600"
-                >
+                <button onClick={handleLogout} className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-red-600">
                   <FaSignOutAlt /> Logout
                 </button>
               </li>
@@ -304,11 +336,7 @@ export default function UserMenu({
         {showSettings && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-md relative">
-              <button
-                onClick={() => setShowSettings(false)}
-                className="absolute top-3 right-3 text-gray-500 hover:text-black"
-                aria-label="Close"
-              >
+              <button onClick={() => setShowSettings(false)} className="absolute top-3 right-3 text-gray-500 hover:text-black" aria-label="Close">
                 <FaTimes />
               </button>
 
@@ -339,29 +367,39 @@ export default function UserMenu({
                   >
                     Upload
                   </button>
-                  <input ref={fileInputRef} type="file" accept="image/*" onChange={onFileChange} className="hidden" />
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => {
+                    const f = e.target.files?.[0]; if (!f) return;
+                    setFileObj(f); setUseSuggested(false); setSuggestedUrl(''); setPreview(URL.createObjectURL(f));
+                  }} className="hidden" />
                 </div>
 
                 <div className="flex gap-2">
-                  {suggestedAvatars.map((img, i) => (
-                    <img
-                      key={i}
-                      src={img}
-                      alt={`Avatar ${i + 1}`}
-                      className="w-10 h-10 rounded-full cursor-pointer hover:border-2 hover:border-blue-400 object-cover"
-                      onClick={() => onPickSuggested(img)}
-                    />
+                  {[avatar1, avatar2, avatar3, avatar4, avatar5].map((img, i) => (
+                    <img key={i} src={img} alt={`Avatar ${i + 1}`} className="w-10 h-10 rounded-full cursor-pointer hover:border-2 hover:border-blue-400 object-cover"
+                      onClick={() => { setUseSuggested(true); setSuggestedUrl(img); setFileObj(null); setPreview(img); }} />
                   ))}
                 </div>
               </div>
 
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShowSettings(false)} className="px-4 py-2 text-gray-600 hover:underline">
-                  Cancel
-                </button>
-                <button onClick={saveProfile} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                  Save
-                </button>
+                <button onClick={() => setShowSettings(false)} className="px-4 py-2 text-gray-600 hover:underline">Cancel</button>
+                <button onClick={async () => {
+                  setNameError('');
+                  if (!userData?._id) return;
+                  try {
+                    const form = new FormData();
+                    if ((userData?.username || '') !== (username || '').trim()) form.append('username', (username || '').trim());
+                    if (fileObj) form.append('avatar', fileObj);
+                    else if (useSuggested && suggestedUrl) form.append('avatarUrl', suggestedUrl);
+                    const res = await axios.put(`${API_BASE}/api/user/${userData._id}`, form, { headers: { 'Content-Type': 'multipart/form-data' }});
+                    const updated = res.data;
+                    const abs = `${toAbsUrl(updated.avatar)}?t=${Date.now()}`;
+                    setMenuAvatar(abs); setPreview(abs); setDisplayName(updated.username || displayName);
+                    setShowSettings(false); setDropdownOpen(false);
+                  } catch (err) {
+                    if (err?.response?.status === 409) setNameError('This username is already taken');
+                  }
+                }} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
               </div>
             </div>
           </div>

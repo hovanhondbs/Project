@@ -3,11 +3,12 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-// đúng vì file đang ở /routes
 const Classroom = require('../models/Classroom');
-require('../models/User');
+const Notification = require('../models/Notification'); // tạo thông báo cho HS
+const User = require('../models/User'); // để lấy tên/ảnh học sinh cho payload GV
 require('../models/FlashcardSet');
-const Notification = require('../models/Notification'); // ✅ thêm để tạo thông báo cho học sinh
+
+const { emitToUser } = require('../socket'); // ✅ emit realtime tới user
 
 // ===== Tạo lớp =====
 router.post('/', async (req, res) => {
@@ -102,6 +103,22 @@ router.post('/:id/request-join', async (req, res) => {
 
     classroom.joinRequests.push({ student: studentId, status: 'pending' });
     await classroom.save();
+
+    // ✅ Realtime: báo cho giáo viên có yêu cầu mới
+    try {
+      const stu = await User.findById(studentId).select('username avatar');
+      emitToUser(classroom.createdBy, 'join:pending', {
+        classId: classroom._id,
+        className: classroom.name,
+        studentId,
+        studentName: stu?.username || 'Student',
+        studentAvatar: stu?.avatar || '',
+        createdAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('emit join:pending error', e?.message);
+    }
+
     res.json({ ok: true });
   } catch (e) {
     console.error('request-join error', e);
@@ -127,12 +144,12 @@ router.post('/:id/approve', async (req, res) => {
     }
     await classroom.save();
 
-    // ✅ Tạo thông báo cho học sinh (hiện trong chuông phía HS)
+    // ✅ Tạo thông báo DB cho HS
     const title = approve ? 'Join request approved' : 'Join request rejected';
     const message = approve
       ? `Your request to join "${classroom.name}" has been approved.`
       : `Your request to join "${classroom.name}" was rejected.`;
-    await Notification.create({
+    const notif = await Notification.create({
       user: studentId,
       type: 'join_request_result',
       title,
@@ -140,6 +157,16 @@ router.post('/:id/approve', async (req, res) => {
       link: `/classes/${req.params.id}`,
       seen: false,
       meta: { classId: req.params.id, className: classroom.name, approve }
+    });
+
+    // ✅ Realtime: gửi ngay thông báo cho HS
+    emitToUser(studentId, 'notif:new', {
+      _id: notif._id,
+      title: notif.title,
+      message: notif.message,
+      link: notif.link,
+      type: notif.type,
+      createdAt: notif.createdAt,
     });
 
     res.json({ ok: true });
@@ -185,7 +212,6 @@ router.get('/pending-requests/:teacherId', async (req, res) => {
       });
     });
 
-    // mới nhất trước
     list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     res.json(list);
   } catch (e) {
