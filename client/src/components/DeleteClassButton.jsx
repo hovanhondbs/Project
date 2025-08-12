@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { FiTrash } from 'react-icons/fi';
 
+const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+
 function DeleteClassButton({ classId, onDeleteSuccess }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -9,12 +11,12 @@ function DeleteClassButton({ classId, onDeleteSuccess }) {
   const handleDelete = async () => {
     try {
       setDeleting(true);
-      await axios.delete(`http://localhost:5000/api/classrooms/${classId}`);
+      await axios.delete(`${API}/api/classrooms/${classId}`);
       setShowConfirm(false);
       if (onDeleteSuccess) onDeleteSuccess();
     } catch (err) {
-      console.error("Delete failed:", err);
-      alert("Failed to delete class");
+      console.error('Delete failed:', err);
+      alert('Failed to delete class');
     } finally {
       setDeleting(false);
     }
@@ -47,7 +49,7 @@ function DeleteClassButton({ classId, onDeleteSuccess }) {
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
                 disabled={deleting}
               >
-                {deleting ? "Deleting..." : "OK"}
+                {deleting ? 'Deleting...' : 'OK'}
               </button>
             </div>
           </div>

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { FiEdit } from 'react-icons/fi';
 import axios from 'axios';
 
+const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+
 function EditClassButton({ classData, onUpdate }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -17,21 +19,20 @@ function EditClassButton({ classData, onUpdate }) {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      alert("Class name is required");
+      alert('Class name is required');
       return;
     }
-
     setLoading(true);
     try {
-      const res = await axios.put(`http://localhost:5000/api/classrooms/${classData._id}`, {
+      const res = await axios.put(`${API}/api/classrooms/${classData._id}`, {
         name,
         description,
       });
-      onUpdate(res.data);
+      if (onUpdate) onUpdate(res.data);
       setOpen(false);
     } catch (err) {
-      console.error("Error updating class:", err);
-      alert("Failed to update class");
+      console.error('Error updating class:', err);
+      alert('Failed to update class');
     } finally {
       setLoading(false);
     }
@@ -81,7 +82,7 @@ function EditClassButton({ classData, onUpdate }) {
                 disabled={loading}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
-                {loading ? "Saving..." : "Save"}
+                {loading ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
