@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const Classroom = require('../models/Classroom');
 require('../models/User');
 require('../models/FlashcardSet');
+const Notification = require('../models/Notification'); // ✅ thêm để tạo thông báo cho học sinh
 
 // ===== Tạo lớp =====
 router.post('/', async (req, res) => {
@@ -125,6 +126,22 @@ router.post('/:id/approve', async (req, res) => {
       classroom.students.push(studentId);
     }
     await classroom.save();
+
+    // ✅ Tạo thông báo cho học sinh (hiện trong chuông phía HS)
+    const title = approve ? 'Join request approved' : 'Join request rejected';
+    const message = approve
+      ? `Your request to join "${classroom.name}" has been approved.`
+      : `Your request to join "${classroom.name}" was rejected.`;
+    await Notification.create({
+      user: studentId,
+      type: 'join_request_result',
+      title,
+      message,
+      link: `/classes/${req.params.id}`,
+      seen: false,
+      meta: { classId: req.params.id, className: classroom.name, approve }
+    });
+
     res.json({ ok: true });
   } catch (e) {
     console.error('approve error', e);

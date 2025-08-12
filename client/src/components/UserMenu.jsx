@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import axios from 'axios';
+// src/components/UserMenu.jsx
+import React, { useState, useRef, useEffect } from 'react';
 import { FaBell, FaTrophy, FaCog, FaSignOutAlt, FaTimes } from 'react-icons/fa';
+import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 import fallbackAvatar from '../assets/icon/20250730_2254_image.png';
 import avatar1 from '../assets/image/avatar1.jpeg';
@@ -28,19 +29,23 @@ export default function UserMenu({
   userData,
   loading,
   handleLogout,
-  bellCount = 0,
-  onBellChange,
-  currentClassId,
-  onApproved,
+  bellCount = 0,      // dùng cho giáo viên (pending-requests)
+  onBellChange,       // setter badge cho giáo viên
+  currentClassId,     // optional
+  onApproved,         // optional
 }) {
+  const navigate = useNavigate();
   const bellRef = useRef(null);
   const localAvatarRef = useRef(null);
   const menuRef = avatarRef || localAvatarRef;
 
+  // UI chuông
   const [showNotif, setShowNotif] = useState(false);
-  const [notifs, setNotifs] = useState([]);
+  const [teacherNotifs, setTeacherNotifs] = useState([]); // danh sách pending cho GV
+  const [studentNotifs, setStudentNotifs] = useState([]); // thông báo duyệt cho HS
   const [actingId, setActingId] = useState(null);
 
+  // Avatar editor
   const [showSettings, setShowSettings] = useState(false);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -53,6 +58,7 @@ export default function UserMenu({
   const fileInputRef = useRef(null);
   const suggestedAvatars = [avatar1, avatar2, avatar3, avatar4, avatar5];
 
+  // ===== Hydrate
   useEffect(() => {
     if (!userData) return;
     const abs = toAbsUrl(userData.avatar);
@@ -67,7 +73,7 @@ export default function UserMenu({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [userData, showSettings]);
 
-  // click-outside
+  // ===== Click outside
   useEffect(() => {
     const onDocMouseDown = (e) => {
       if (bellRef.current && !bellRef.current.contains(e.target)) setShowNotif(false);
@@ -77,21 +83,45 @@ export default function UserMenu({
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [setDropdownOpen]);
 
-  // toggle chuông + fetch danh sách pending
+  const isTeacher = String(userData?.role || '').toLowerCase() === 'teacher';
+
+  // ===== Lấy badge cho học sinh (đếm thông báo chưa đọc)
+  const [studentBadge, setStudentBadge] = useState(0);
+  useEffect(() => {
+    if (!userData?._id || isTeacher) return; // HS thôi
+    axios.get(`${API_BASE}/api/notifications/count/${userData._id}`)
+      .then(r => setStudentBadge(r.data?.count || 0))
+      .catch(() => setStudentBadge(0));
+  }, [userData?._id, isTeacher]);
+
+  // ===== Toggle chuông
   const toggleNotif = async () => {
     const willShow = !showNotif;
     setShowNotif(willShow);
-    if (willShow && userData?._id) {
+    if (!willShow || !userData?._id) return;
+
+    if (isTeacher) {
+      // Giáo viên: danh sách yêu cầu pending
       try {
         const r = await axios.get(`${API_BASE}/api/classrooms/pending-requests/${userData._id}`);
-        setNotifs(r.data || []);
-      } catch {
-        setNotifs([]);
-      }
+        setTeacherNotifs(r.data || []);
+      } catch { setTeacherNotifs([]); }
+    } else {
+      // Học sinh: danh sách thông báo
+      try {
+        const r = await axios.get(`${API_BASE}/api/notifications/list/${userData._id}`);
+        setStudentNotifs(r.data || []);
+      } catch { setStudentNotifs([]); }
+      // Auto mark-all-seen cho HS
+      try {
+        await axios.post(`${API_BASE}/api/notifications/mark-all-seen/${userData._id}`);
+        setStudentBadge(0);
+      } catch {}
     }
   };
 
-  const refreshBell = async () => {
+  // ===== Giáo viên approve/reject
+  const refreshBellForTeacher = async () => {
     if (!userData?._id) return;
     try {
       const r = await axios.get(`${API_BASE}/api/classrooms/pending-count/${userData._id}`);
@@ -107,18 +137,19 @@ export default function UserMenu({
       await axios.post(`${API_BASE}/api/classrooms/${n.classId}/approve`, {
         studentId: n.studentId, approve
       });
-      setNotifs(prev => prev.filter(x => !(x.classId === n.classId && x.studentId === n.studentId)));
-      await refreshBell();
+      setTeacherNotifs(prev => prev.filter(x => !(x.classId === n.classId && x.studentId === n.studentId)));
+      await refreshBellForTeacher();
       if (approve && currentClassId && String(currentClassId) === String(n.classId)) {
         onApproved?.();
       }
     } catch {
-      alert('Thao tác thất bại. Vui lòng thử lại.');
+      // không alert theo yêu cầu
     } finally {
       setActingId(null);
     }
   };
 
+  // ===== Avatar editor helpers (giữ nguyên pattern)
   const onFileChange = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -127,12 +158,7 @@ export default function UserMenu({
     setSuggestedUrl('');
     setPreview(URL.createObjectURL(f));
   };
-  const onPickSuggested = (url) => {
-    setUseSuggested(true);
-    setSuggestedUrl(url);
-    setFileObj(null);
-    setPreview(url);
-  };
+  const onPickSuggested = (url) => { setUseSuggested(true); setSuggestedUrl(url); setFileObj(null); setPreview(url); };
   const willChangeName = () => (userData?.username || '') !== (username || '').trim();
 
   const saveProfile = async () => {
@@ -156,19 +182,20 @@ export default function UserMenu({
       setDropdownOpen(false);
     } catch (err) {
       if (err?.response?.status === 409) setNameError('This username is already taken');
-      else alert('Update failed. Please try again.');
     }
   };
 
+  // ===== UI
   return (
     <div className="flex items-center gap-4 ml-4">
-      {/* Chuông thông báo */}
+      {/* Chuông */}
       <div className="relative" ref={bellRef}>
         <button onClick={toggleNotif} className="relative p-2 rounded-full hover:bg-gray-100" title="Notifications">
           <FaBell className="text-gray-700" size={20} />
-          {bellCount > 0 && (
+          {/* Badge: GV dùng bellCount từ props, HS dùng studentBadge */}
+          {(isTeacher ? (bellCount > 0) : (studentBadge > 0)) && (
             <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">
-              {bellCount}
+              {isTeacher ? bellCount : studentBadge}
             </span>
           )}
         </button>
@@ -176,23 +203,19 @@ export default function UserMenu({
         {showNotif && (
           <div className="absolute right-0 mt-2 w-80 bg-white border rounded-lg shadow-lg z-20 max-h-96 overflow-y-auto">
             <div className="px-4 py-2 border-b font-semibold">Notifications</div>
-            {notifs.length === 0 ? (
-              <div className="p-4 text-sm text-gray-500">No new requests</div>
-            ) : (
-              notifs.map((n, i) => (
-                <div key={`${n.classId}_${n.studentId}_${i}`} className="px-4 py-3 border-b text-sm flex items-center gap-3">
-                  <img
-                    src={toAbsUrl(n.studentAvatar)}
-                    alt=""
-                    className="w-8 h-8 rounded-full object-cover"
-                    onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
-                  />
-                  <div className="flex-1">
-                    <p>
-                      <span className="font-semibold">{n.studentName}</span> wants to join{' '}
-                      <span className="font-semibold">{n.className}</span>
-                    </p>
-                    <p className="text-xs text-gray-400">{new Date(n.createdAt).toLocaleString()}</p>
+
+            {isTeacher ? (
+              // ===== GV: danh sách yêu cầu chờ duyệt
+              teacherNotifs.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">No new requests</div>
+              ) : (
+                teacherNotifs.map((n, i) => (
+                  <div key={`${n.classId}_${n.studentId}_${i}`} className="px-4 py-3 border-b text-sm">
+                    <div className="font-semibold">{n.studentName}</div>
+                    <div className="text-gray-600">
+                      wants to join <span className="font-semibold">{n.className}</span>
+                    </div>
+                    <div className="text-xs text-gray-400">{new Date(n.createdAt).toLocaleString()}</div>
                     <div className="mt-2 flex gap-2">
                       <button
                         className="px-2.5 py-1 rounded bg-green-600 text-white text-xs hover:bg-green-700 disabled:opacity-50"
@@ -210,14 +233,28 @@ export default function UserMenu({
                       </button>
                     </div>
                   </div>
-                </div>
-              ))
+                ))
+              )
+            ) : (
+              // ===== HS: danh sách thông báo kết quả duyệt
+              studentNotifs.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">No notifications</div>
+              ) : (
+                studentNotifs.map((n, i) => (
+                  <div key={`${n._id || i}`} className="px-4 py-3 border-b text-sm cursor-pointer hover:bg-gray-50"
+                       onClick={() => n.link ? navigate(n.link) : null}>
+                    <div className="font-semibold">{n.title}</div>
+                    <div className="text-gray-600">{n.message}</div>
+                    <div className="text-xs text-gray-400">{new Date(n.createdAt).toLocaleString()}</div>
+                  </div>
+                ))
+              )
             )}
           </div>
         )}
       </div>
 
-      {/* Avatar dropdown + Profile editor (giữ như trước, có cập nhật nhỏ) */}
+      {/* Avatar dropdown + Profile editor (giữ nguyên cấu trúc) */}
       <div className="relative" ref={menuRef}>
         <img
           src={menuAvatar}
@@ -245,12 +282,18 @@ export default function UserMenu({
                 </Link>
               </li>
               <li>
-                <button onClick={() => setShowSettings(true)} className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100"
+                >
                   <FaCog /> Profile & Avatar
                 </button>
               </li>
               <li>
-                <button onClick={handleLogout} className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-red-600">
+                <button
+                  onClick={handleLogout}
+                  className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-red-600"
+                >
                   <FaSignOutAlt /> Logout
                 </button>
               </li>
@@ -261,9 +304,14 @@ export default function UserMenu({
         {showSettings && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-md relative">
-              <button onClick={() => setShowSettings(false)} className="absolute top-3 right-3 text-gray-500 hover:text-black" aria-label="Close">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="absolute top-3 right-3 text-gray-500 hover:text-black"
+                aria-label="Close"
+              >
                 <FaTimes />
               </button>
+
               <h2 className="text-xl font-semibold mb-4">Update Profile</h2>
 
               <label className="block text-sm mb-1 font-medium">Username</label>
@@ -308,8 +356,12 @@ export default function UserMenu({
               </div>
 
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShowSettings(false)} className="px-4 py-2 text-gray-600 hover:underline">Cancel</button>
-                <button onClick={saveProfile} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                <button onClick={() => setShowSettings(false)} className="px-4 py-2 text-gray-600 hover:underline">
+                  Cancel
+                </button>
+                <button onClick={saveProfile} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                  Save
+                </button>
               </div>
             </div>
           </div>
