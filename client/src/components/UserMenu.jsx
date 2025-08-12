@@ -128,7 +128,7 @@ export default function UserMenu({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [userData, showSettings]);
 
-  // ===== Click-outside
+  // ===== Click-outside (FIX: thêm menuRef & bellRef vào deps để hết cảnh báo ESLint)
   useEffect(() => {
     const onDocMouseDown = (e) => {
       if (bellRef.current && !bellRef.current.contains(e.target)) setShowNotif(false);
@@ -136,7 +136,7 @@ export default function UserMenu({
     };
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [setDropdownOpen]);
+  }, [setDropdownOpen, setShowNotif, menuRef, bellRef]);
 
   // ===== Badge HS khi load
   useEffect(() => {
@@ -250,19 +250,14 @@ export default function UserMenu({
     // Nếu đổi username: phải không có uError và (uAvail !== false)
     const changingName = usernameClean !== (origUsername || '');
     const nameOk = !changingName || (!uError && uAvail !== false);
-    // Avatar luôn ok
     return nameOk;
   }, [usernameClean, origUsername, uError, uAvail]);
 
   const saveProfile = async () => {
     if (!userData?._id) return;
 
-    // Validate lần nữa trước khi gửi
     if (usernameClean !== (origUsername || '')) {
-      if (!USERNAME_REGEX.test(usernameClean)) {
-        setUError('3–20 ký tự, cho phép chữ tiếng Việt, khoảng trắng, dấu chấm và gạch dưới');
-        return;
-      }
+      if (!USERNAME_REGEX.test(usernameClean)) { setUError('3–20 ký tự, cho phép chữ tiếng Việt, khoảng trắng, dấu chấm và gạch dưới'); return; }
       if (isAllDigits(usernameClean)) { setUError('Username không thể chỉ toàn số'); return; }
       if (looksLikeEmail(usernameClean)) { setUError('Username không thể là địa chỉ email'); return; }
       if (uAvail === false) { setUError('Username đã được dùng'); return; }
@@ -270,7 +265,6 @@ export default function UserMenu({
 
     try {
       const form = new FormData();
-      // Chỉ append nếu thực sự đổi
       if (usernameClean !== (origUsername || '')) form.append('username', usernameClean);
       if (fileObj) form.append('avatar', fileObj);
       else if (useSuggested && suggestedUrl) form.append('avatarUrl', suggestedUrl);
@@ -418,7 +412,7 @@ export default function UserMenu({
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full border px-3 py-2 rounded mb-1"
-                placeholder="Anh Tài"
+                placeholder="John Doe"
               />
               {/* hint/validation */}
               <div className="text-xs mt-1">
