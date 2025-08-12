@@ -1,105 +1,152 @@
+// src/pages/SignUpPage.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useForm } from 'react-hook-form';
 
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
-const USERNAME_REGEX = /^[a-zA-Z0-9._]{3,20}$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9._]{3,20}$/; // 3–20: chữ/số/._ 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export default function SignUpPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ username: '', email: '', password: '', role: 'User' });
-  const [errors, setErrors] = useState({});
-  const [checking, setChecking] = useState(false);
-  const [available, setAvailable] = useState(null); // null | true | false
 
-  const onChange = (e) => {
-    const { name, value } = e.target;
-    setForm((p) => ({ ...p, [name]: value }));
-    setErrors((p) => ({ ...p, [name]: '' }));
-    if (name === 'username') setAvailable(null);
-  };
+  // React Hook Form
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setError,
+    clearErrors,
+    formState: { errors, isSubmitting }
+  } = useForm({
+    mode: 'onChange',
+    defaultValues: { username: '', email: '', password: '', role: 'User' },
+  });
 
-  // Debounced username availability check
+  // Watch fields
+  const username = watch('username');
+  const email = watch('email');
+  const password = watch('password');
+  const role = watch('role'); // giữ cho đúng data structure, UI không hiển thị
+
+  // Realtime availability state
+  const [checkingU, setCheckingU] = useState(false);
+  const [availU, setAvailU] = useState(null); // null | true | false
+  const [checkingE, setCheckingE] = useState(false);
+  const [availE, setAvailE] = useState(null); // null | true | false
+
+  // Debounced USERNAME check
   useEffect(() => {
+    if (!username) { setAvailU(null); return; }
     const t = setTimeout(async () => {
-      const name = form.username.trim();
-      if (!name || !USERNAME_REGEX.test(name)) return setAvailable(null);
+      const u = (username || '').trim();
+      if (!USERNAME_REGEX.test(u)) { setAvailU(null); return; }
       try {
-        setChecking(true);
-        const res = await axios.get(`${API_BASE}/api/auth/check-username`, { params: { username: name } });
-        setAvailable(!!res.data?.available);
-      } catch (_) {
-        setAvailable(null);
+        setCheckingU(true);
+        const res = await axios.get(`${API_BASE}/api/auth/check-username`, { params: { username: u } });
+        setAvailU(!!res.data?.available);
+        if (res.data?.available) clearErrors('username');
+        else setError('username', { type: 'manual', message: 'Username is taken' });
+      } catch {
+        setAvailU(null);
       } finally {
-        setChecking(false);
+        setCheckingU(false);
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [form.username]);
+  }, [username, clearErrors, setError]);
 
+  // Debounced EMAIL check
+  useEffect(() => {
+    if (!email) { setAvailE(null); return; }
+    const t = setTimeout(async () => {
+      const e = (email || '').trim();
+      if (!EMAIL_REGEX.test(e)) { setAvailE(null); return; }
+      try {
+        setCheckingE(true);
+        const res = await axios.get(`${API_BASE}/api/auth/check-email`, { params: { email: e } });
+        setAvailE(!!res.data?.available);
+        if (res.data?.available) clearErrors('email');
+        else setError('email', { type: 'manual', message: 'Email is already in use' });
+      } catch {
+        setAvailE(null);
+      } finally {
+        setCheckingE(false);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [email, clearErrors, setError]);
+
+  // Password strength (giữ đúng hiển thị hiện tại)
   const pwdStrength = useMemo(() => {
-    const { password } = form;
-    const len = password.length >= 8;
-    const letter = /[a-zA-Z]/.test(password);
-    const num = /\d/.test(password);
+    const len = (password || '').length >= 8;
+    const letter = /[a-zA-Z]/.test(password || '');
+    const num = /\d/.test(password || '');
     const score = [len, letter, num].filter(Boolean).length;
     return { score, len, letter, num };
-  }, [form.password]);
+  }, [password]);
 
-  const validate = () => {
-    const e = {};
-    if (!form.username.trim()) e.username = 'Username is required';
-    else if (!USERNAME_REGEX.test(form.username.trim())) e.username = '3–20 letters, numbers, dot or underscore';
-    if (!form.email.trim()) e.email = 'Email is required';
-    else if (!EMAIL_REGEX.test(form.email.trim())) e.email = 'Invalid email';
-    if (!form.password) e.password = 'Password is required';
-    else if (!(pwdStrength.len && pwdStrength.letter && pwdStrength.num)) e.password = 'At least 8 chars incl. a letter and a number';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
+  // Submit
+  const onSubmit = async (data) => {
+    // Nếu đã biết chắc trùng thì chặn
+    if (availU === false) {
+      setError('username', { type: 'manual', message: 'Username is taken' });
+      return;
+    }
+    if (availE === false) {
+      setError('email', { type: 'manual', message: 'Email is already in use' });
+      return;
+    }
 
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    if (!validate()) return;
     try {
       const res = await axios.post(`${API_BASE}/api/auth/register`, {
-        username: form.username.trim(),
-        email: form.email.trim(),
-        password: form.password,
-        role: form.role,
+        username: data.username.trim(),
+        email: data.email.trim(),
+        password: data.password,
+        role: role || 'User',
       });
 
-      // auto-login if your backend returns token like above
-      const { token, user } = res.data;
+      const { token, user } = res.data || {};
       if (token && user) {
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(user));
-        localStorage.setItem('userId', user.id);
+        localStorage.setItem('userId', user.id || user._id);
       }
 
       alert('Sign up successful!');
       navigate('/choose-role');
     } catch (err) {
-      const msg = err.response?.data?.message || 'Sign up failed';
-      if (/username/i.test(msg)) setErrors((p) => ({ ...p, username: msg }));
-      if (/email/i.test(msg)) setErrors((p) => ({ ...p, email: msg }));
+      const msg = err?.response?.data?.message || 'Sign up failed';
+      if (/username/i.test(msg)) setError('username', { type: 'server', message: msg });
+      else if (/email/i.test(msg)) setError('email', { type: 'server', message: msg });
+      else setError('password', { type: 'server', message: msg });
       alert(msg);
     }
   };
 
   return (
     <div className="min-h-screen flex justify-center items-center bg-white px-4 relative">
-      <button className="absolute top-4 right-4 text-xl text-gray-400 hover:text-black" onClick={() => navigate('/')}>×</button>
+      <button
+        className="absolute top-4 right-4 text-xl text-gray-400 hover:text-black"
+        onClick={() => navigate('/')}
+      >
+        ×
+      </button>
 
       <div className="w-full max-w-md p-8 shadow rounded-lg">
         <div className="text-center mb-6">
           <div className="flex justify-center mb-4 text-lg font-semibold">
             <span className="border-b-2 border-purple-400 text-gray-900 mr-6">Sign up</span>
-            <button onClick={() => navigate('/login')} className="text-gray-400 hover:text-black">Log in</button>
+            <button onClick={() => navigate('/login')} className="text-gray-400 hover:text-black">
+              Log in
+            </button>
           </div>
-          <button className="w-full py-2 border rounded-full flex items-center justify-center gap-2 text-sm hover:bg-gray-50 mb-6">
+          <button
+            className="w-full py-2 border rounded-full flex items-center justify-center gap-2 text-sm hover:bg-gray-50 mb-6"
+            type="button"
+          >
             <img src="https://img.icons8.com/color/20/google-logo.png" alt="Google" />
             Continue with Google
           </button>
@@ -110,59 +157,125 @@ export default function SignUpPage() {
           </div>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        {/* GIỮ NGUYÊN GIAO DIỆN & CLASSNAMES */}
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* Username */}
           <div>
             <label className="text-sm text-gray-700">Username</label>
             <input
               type="text"
-              name="username"
-              value={form.username}
-              onChange={onChange}
-              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${errors.username ? 'border-red-500' : ''}`}
+              {...register('username', {
+                required: 'Username is required',
+                validate: {
+                  format: (v) =>
+                    USERNAME_REGEX.test((v || '').trim()) ||
+                    '3–20 letters, numbers, dot or underscore',
+                },
+                onChange: () => setAvailU(null),
+              })}
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
+                errors.username ? 'border-red-500' : ''
+              }`}
               placeholder="your_username"
+              autoComplete="off"
             />
             <div className="mt-1 text-xs">
-              {checking && <span className="text-gray-500">Checking availability…</span>}
-              {!checking && available === true && <span className="text-green-600">Username is available</span>}
-              {!checking && available === false && <span className="text-red-600">Username is taken</span>}
-              {errors.username && <div className="text-red-600">{errors.username}</div>}
+              {checkingU && <span className="text-gray-500">Checking availability…</span>}
+              {!checkingU && availU === true && (
+                <span className="text-green-600">Username is available</span>
+              )}
+              {!checkingU && availU === false && (
+                <span className="text-red-600">Username is taken</span>
+              )}
+              {errors.username && <div className="text-red-600">{errors.username.message}</div>}
             </div>
           </div>
 
+          {/* Email */}
           <div>
             <label className="text-sm text-gray-700">Email</label>
             <input
               type="email"
-              name="email"
-              value={form.email}
-              onChange={onChange}
-              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${errors.email ? 'border-red-500' : ''}`}
+              {...register('email', {
+                required: 'Email is required',
+                validate: {
+                  format: (v) => EMAIL_REGEX.test((v || '').trim()) || 'Invalid email',
+                },
+                onChange: () => setAvailE(null),
+              })}
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
+                errors.email ? 'border-red-500' : ''
+              }`}
               placeholder="you@example.com"
+              autoComplete="off"
             />
-            {errors.email && <div className="text-red-600 text-xs mt-1">{errors.email}</div>}
+            {/* Giữ layout: chỉ một dòng nhỏ bên dưới như field Username */}
+            <div className="mt-1 text-xs">
+              {checkingE && <span className="text-gray-500">Checking…</span>}
+              {!checkingE && availE === true && (
+                <span className="text-green-600">Email is available</span>
+              )}
+              {!checkingE && availE === false && (
+                <span className="text-red-600">Email is already in use</span>
+              )}
+              {errors.email && <div className="text-red-600">{errors.email.message}</div>}
+            </div>
           </div>
 
+          {/* Password */}
           <div>
             <label className="text-sm text-gray-700">Password</label>
             <input
               type="password"
-              name="password"
-              value={form.password}
-              onChange={onChange}
-              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${errors.password ? 'border-red-500' : ''}`}
+              {...register('password', {
+                required: 'Password is required',
+                validate: {
+                  len: (v) => (v || '').length >= 8 || 'At least 8 characters',
+                  letter: (v) => /[A-Za-z]/.test(v || '') || 'Must include a letter',
+                  number: (v) => /\d/.test(v || '') || 'Must include a number',
+                },
+              })}
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
+                errors.password ? 'border-red-500' : ''
+              }`}
               placeholder="At least 8 characters"
+              autoComplete="new-password"
             />
             <div className="text-xs mt-1">
               <div className="flex gap-2">
-                <span className={`px-2 py-0.5 rounded ${pwdStrength.len ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>8+ chars</span>
-                <span className={`px-2 py-0.5 rounded ${pwdStrength.letter ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>letter</span>
-                <span className={`px-2 py-0.5 rounded ${pwdStrength.num ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>number</span>
+                <span
+                  className={`px-2 py-0.5 rounded ${
+                    pwdStrength.len ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  8+ chars
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded ${
+                    pwdStrength.letter ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  letter
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded ${
+                    pwdStrength.num ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  number
+                </span>
               </div>
-              {errors.password && <div className="text-red-600 mt-1">{errors.password}</div>}
+              {errors.password && <div className="text-red-600 mt-1">{errors.password.message}</div>}
             </div>
           </div>
 
-          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition">Sign up</button>
+          <button
+            type="submit"
+            className="w-full py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Signing up…' : 'Sign up'}
+          </button>
         </form>
       </div>
     </div>

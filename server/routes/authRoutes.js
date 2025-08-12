@@ -6,14 +6,15 @@ const User = require('../models/User');
 
 const router = express.Router();
 
-// Username rules like Quizlet
-const USERNAME_REGEX = /^[a-zA-Z0-9._]{3,20}$/; // letters, numbers, dot, underscore; 3-20
+// Username / Email rules
+const USERNAME_REGEX = /^[a-zA-Z0-9._]{3,20}$/; // letters, numbers, dot, underscore; 3–20
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const isAllDigits = (s) => /^\d+$/.test(s || '');
 const looksLikeEmail = (s) => /@/.test(s || '');
 
-// Availability check for FE
+// 🔎 Username availability
+// GET /api/auth/check-username?username=...
 router.get('/check-username', async (req, res) => {
   try {
     const raw = (req.query.username || '').trim();
@@ -25,7 +26,20 @@ router.get('/check-username', async (req, res) => {
   }
 });
 
-// Register with strict validation
+// 🔎 Email availability
+// GET /api/auth/check-email?email=...
+router.get('/check-email', async (req, res) => {
+  try {
+    const raw = (req.query.email || '').trim();
+    if (!raw || !EMAIL_REGEX.test(raw)) return res.json({ available: false, reason: 'invalid' });
+    const found = await User.findOne({ email: raw }).collation({ locale: 'en', strength: 2 });
+    res.json({ available: !found });
+  } catch (e) {
+    res.status(500).json({ available: false, error: 'server_error' });
+  }
+});
+
+// Register
 router.post('/register', async (req, res) => {
   try {
     let { username, email, password, role } = req.body;
@@ -36,20 +50,21 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Username, email and password are required' });
 
     if (!USERNAME_REGEX.test(username))
-      return res.status(400).json({ message: 'Username must be 3-20 characters and contain only letters, numbers, dot or underscore' });
-    if (isAllDigits(username))
-      return res.status(400).json({ message: 'Username cannot be numbers only' });
-    if (looksLikeEmail(username))
-      return res.status(400).json({ message: 'Username cannot be an email address' });
+      return res.status(400).json({
+        message: 'Username must be 3-20 characters and contain only letters, numbers, dot or underscore',
+      });
+    if (isAllDigits(username)) return res.status(400).json({ message: 'Username cannot be numbers only' });
+    if (looksLikeEmail(username)) return res.status(400).json({ message: 'Username cannot be an email address' });
 
-    if (!EMAIL_REGEX.test(email))
-      return res.status(400).json({ message: 'Invalid email address' });
+    if (!EMAIL_REGEX.test(email)) return res.status(400).json({ message: 'Invalid email address' });
 
     const hasLen = password.length >= 8;
     const hasLetter = /[a-zA-Z]/.test(password);
     const hasNumber = /\d/.test(password);
     if (!(hasLen && hasLetter && hasNumber))
-      return res.status(400).json({ message: 'Password must be at least 8 characters and include a letter and a number' });
+      return res.status(400).json({
+        message: 'Password must be at least 8 characters and include a letter and a number',
+      });
 
     // Uniqueness (case-insensitive)
     const usernameTaken = await User.findOne({ username }).collation({ locale: 'en', strength: 2 });
@@ -78,7 +93,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// (Optional) Login — keep your existing one if you already have it
+// Login (giữ giống dự án bạn)
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
