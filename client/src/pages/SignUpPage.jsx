@@ -6,13 +6,13 @@ import { useForm } from 'react-hook-form';
 
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
-const USERNAME_REGEX = /^[a-zA-Z0-9._]{3,20}$/; // 3–20: chữ/số/._ 
+// ✅ Cho phép chữ Unicode có dấu + số + "." + "_" + khoảng trắng; 3–20 ký tự
+const USERNAME_REGEX = /^[\p{L}\p{M}\p{N}._ ]{3,20}$/u;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export default function SignUpPage() {
   const navigate = useNavigate();
 
-  // React Hook Form
   const {
     register,
     handleSubmit,
@@ -25,19 +25,17 @@ export default function SignUpPage() {
     defaultValues: { username: '', email: '', password: '', role: 'User' },
   });
 
-  // Watch fields
   const username = watch('username');
   const email = watch('email');
   const password = watch('password');
-  const role = watch('role'); // giữ cho đúng data structure, UI không hiển thị
+  const role = watch('role');
 
-  // Realtime availability state
   const [checkingU, setCheckingU] = useState(false);
-  const [availU, setAvailU] = useState(null); // null | true | false
+  const [availU, setAvailU] = useState(null);
   const [checkingE, setCheckingE] = useState(false);
-  const [availE, setAvailE] = useState(null); // null | true | false
+  const [availE, setAvailE] = useState(null);
 
-  // Debounced USERNAME check
+  // Debounce USERNAME
   useEffect(() => {
     if (!username) { setAvailU(null); return; }
     const t = setTimeout(async () => {
@@ -58,7 +56,7 @@ export default function SignUpPage() {
     return () => clearTimeout(t);
   }, [username, clearErrors, setError]);
 
-  // Debounced EMAIL check
+  // Debounce EMAIL
   useEffect(() => {
     if (!email) { setAvailE(null); return; }
     const t = setTimeout(async () => {
@@ -79,42 +77,32 @@ export default function SignUpPage() {
     return () => clearTimeout(t);
   }, [email, clearErrors, setError]);
 
-  // Password strength (giữ đúng hiển thị hiện tại)
+  // Strength
   const pwdStrength = useMemo(() => {
     const len = (password || '').length >= 8;
-    const letter = /[a-zA-Z]/.test(password || '');
+    const letter = /[A-Za-z]/.test(password || '');
     const num = /\d/.test(password || '');
     const score = [len, letter, num].filter(Boolean).length;
     return { score, len, letter, num };
   }, [password]);
 
-  // Submit
   const onSubmit = async (data) => {
-    // Nếu đã biết chắc trùng thì chặn
-    if (availU === false) {
-      setError('username', { type: 'manual', message: 'Username is taken' });
-      return;
-    }
-    if (availE === false) {
-      setError('email', { type: 'manual', message: 'Email is already in use' });
-      return;
-    }
+    if (availU === false) { setError('username', { type: 'manual', message: 'Username is taken' }); return; }
+    if (availE === false) { setError('email', { type: 'manual', message: 'Email is already in use' }); return; }
 
     try {
       const res = await axios.post(`${API_BASE}/api/auth/register`, {
-        username: data.username.trim(),
+        username: data.username.trim(), // giữ khoảng trắng giữa từ, cắt đầu/đuôi
         email: data.email.trim(),
         password: data.password,
         role: role || 'User',
       });
-
       const { token, user } = res.data || {};
       if (token && user) {
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(user));
         localStorage.setItem('userId', user.id || user._id);
       }
-
       alert('Sign up successful!');
       navigate('/choose-role');
     } catch (err) {
@@ -157,7 +145,6 @@ export default function SignUpPage() {
           </div>
         </div>
 
-        {/* GIỮ NGUYÊN GIAO DIỆN & CLASSNAMES */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Username */}
           <div>
@@ -169,24 +156,20 @@ export default function SignUpPage() {
                 validate: {
                   format: (v) =>
                     USERNAME_REGEX.test((v || '').trim()) ||
-                    '3–20 letters, numbers, dot or underscore',
+                    '3–20 ký tự, cho phép chữ tiếng Việt, khoảng trắng, dấu chấm và gạch dưới',
                 },
                 onChange: () => setAvailU(null),
               })}
               className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
                 errors.username ? 'border-red-500' : ''
               }`}
-              placeholder="your_username"
+              placeholder="John Doe"
               autoComplete="off"
             />
             <div className="mt-1 text-xs">
               {checkingU && <span className="text-gray-500">Checking availability…</span>}
-              {!checkingU && availU === true && (
-                <span className="text-green-600">Username is available</span>
-              )}
-              {!checkingU && availU === false && (
-                <span className="text-red-600">Username is taken</span>
-              )}
+              {!checkingU && availU === true && <span className="text-green-600">Username is available</span>}
+              {!checkingU && availU === false && <span className="text-red-600">Username is taken</span>}
               {errors.username && <div className="text-red-600">{errors.username.message}</div>}
             </div>
           </div>
@@ -198,26 +181,17 @@ export default function SignUpPage() {
               type="email"
               {...register('email', {
                 required: 'Email is required',
-                validate: {
-                  format: (v) => EMAIL_REGEX.test((v || '').trim()) || 'Invalid email',
-                },
+                validate: { format: (v) => EMAIL_REGEX.test((v || '').trim()) || 'Invalid email' },
                 onChange: () => setAvailE(null),
               })}
-              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
-                errors.email ? 'border-red-500' : ''
-              }`}
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${errors.email ? 'border-red-500' : ''}`}
               placeholder="you@example.com"
               autoComplete="off"
             />
-            {/* Giữ layout: chỉ một dòng nhỏ bên dưới như field Username */}
             <div className="mt-1 text-xs">
               {checkingE && <span className="text-gray-500">Checking…</span>}
-              {!checkingE && availE === true && (
-                <span className="text-green-600">Email is available</span>
-              )}
-              {!checkingE && availE === false && (
-                <span className="text-red-600">Email is already in use</span>
-              )}
+              {!checkingE && availE === true && <span className="text-green-600">Email is available</span>}
+              {!checkingE && availE === false && <span className="text-red-600">Email is already in use</span>}
               {errors.email && <div className="text-red-600">{errors.email.message}</div>}
             </div>
           </div>
@@ -235,35 +209,15 @@ export default function SignUpPage() {
                   number: (v) => /\d/.test(v || '') || 'Must include a number',
                 },
               })}
-              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${
-                errors.password ? 'border-red-500' : ''
-              }`}
+              className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 ${errors.password ? 'border-red-500' : ''}`}
               placeholder="At least 8 characters"
               autoComplete="new-password"
             />
             <div className="text-xs mt-1">
               <div className="flex gap-2">
-                <span
-                  className={`px-2 py-0.5 rounded ${
-                    pwdStrength.len ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  8+ chars
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded ${
-                    pwdStrength.letter ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  letter
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded ${
-                    pwdStrength.num ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  number
-                </span>
+                <span className={`px-2 py-0.5 rounded ${pwdStrength.len ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>8+ chars</span>
+                <span className={`px-2 py-0.5 rounded ${pwdStrength.letter ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>letter</span>
+                <span className={`px-2 py-0.5 rounded ${pwdStrength.num ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>number</span>
               </div>
               {errors.password && <div className="text-red-600 mt-1">{errors.password.message}</div>}
             </div>
