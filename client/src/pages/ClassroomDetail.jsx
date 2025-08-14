@@ -1,5 +1,5 @@
 // src/pages/ClassroomDetail.jsx
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -28,6 +28,13 @@ export default function ClassroomDetail() {
   const [mySets, setMySets] = useState([]);
   const [createForm, setCreateForm] = useState({ setId: '', mode: 'test', deadline: '' });
 
+  // Results
+  const [resLoading, setResLoading] = useState(false);
+  const [results, setResults] = useState([]);
+  const [resAssignments, setResAssignments] = useState([]);
+  const [filterA, setFilterA] = useState('all'); // assignment filter
+  const [filterS, setFilterS] = useState('all'); // 🔹 student filter (teacher only)
+
   const userIdLS = localStorage.getItem('userId');
 
   // ---- Fetch helpers ----
@@ -55,6 +62,22 @@ export default function ClassroomDetail() {
     [id, userIdLS]
   );
 
+  const fetchResults = useCallback(async () => {
+    try {
+      setResLoading(true);
+      const r = await axios.get(`${API}/api/assignments/class/${id}/results`, {
+        params: { viewerId: userIdLS },
+      });
+      setResults(r.data?.results || []);
+      setResAssignments(r.data?.assignments || []);
+    } catch {
+      setResults([]);
+      setResAssignments([]);
+    } finally {
+      setResLoading(false);
+    }
+  }, [id, userIdLS]);
+
   // ---- Initial load ----
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +93,11 @@ export default function ClassroomDetail() {
     })();
     return () => { cancelled = true; };
   }, [id, userIdLS, fetchUser, fetchClass, fetchAssignments]);
+
+  // Khi chuyển tab Results thì lấy dữ liệu
+  useEffect(() => {
+    if (activeTab === 'results') fetchResults();
+  }, [activeTab, fetchResults]);
 
   // ---- mark pending for student ----
   useEffect(() => {
@@ -149,6 +177,18 @@ export default function ClassroomDetail() {
     localStorage.clear();
     window.location.href = '/';
   };
+
+  // ==== Results derived: apply both filters ====
+  const filteredResults = useMemo(() => {
+    let arr = results;
+    if (filterA !== 'all') {
+      arr = arr.filter((r) => String(r.assignmentId) === String(filterA));
+    }
+    if (isTeacher && filterS !== 'all') {
+      arr = arr.filter((r) => String(r.studentId) === String(filterS));
+    }
+    return arr;
+  }, [results, filterA, filterS, isTeacher]);
 
   if (loading || !classData || !userData) return <div className="p-10">Loading...</div>;
 
@@ -316,7 +356,95 @@ export default function ClassroomDetail() {
               )}
 
               {activeTab === 'results' && (
-                <p className="text-gray-500">Tracking feature will be updated soon.</p>
+                <div className="bg-white rounded-xl p-6 shadow">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Results</h3>
+
+                    {/* 🔹 Filters row */}
+                    <div className="flex items-center gap-3">
+                      {/* Student filter: only for teacher */}
+                      {isTeacher && (
+                        <select
+                          className="border rounded px-3 py-2 text-sm"
+                          value={filterS}
+                          onChange={(e) => setFilterS(e.target.value)}
+                        >
+                          <option value="all">All students</option>
+                          {(classData.students || []).map((stu) => {
+                            const sid = stu._id || stu;
+                            const name = stu.username || String(stu);
+                            return (
+                              <option key={sid} value={sid}>
+                                {name}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+
+                      {/* Assignment filter */}
+                      <select
+                        className="border rounded px-3 py-2 text-sm"
+                        value={filterA}
+                        onChange={(e) => setFilterA(e.target.value)}
+                      >
+                        <option value="all">All assignments</option>
+                        {resAssignments.map((a) => (
+                          <option key={a._id} value={a._id}>
+                            {a.title} ({a.mode})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {resLoading ? (
+                    <div className="text-gray-500">Loading results…</div>
+                  ) : filteredResults.length === 0 ? (
+                    <div className="text-gray-500">No results yet.</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 text-gray-700">
+                            <th className="text-left p-2">Assignment</th>
+                            <th className="text-left p-2">Mode</th>
+                            {isTeacher && <th className="text-left p-2">Student</th>}
+                            <th className="text-left p-2">Score</th>
+                            <th className="text-left p-2">Total</th>
+                            <th className="text-left p-2">Status</th>
+                            <th className="text-left p-2">Submitted at</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredResults.map((r, i) => (
+                            <tr key={i} className="border-t">
+                              <td className="p-2">{r.assignmentTitle}</td>
+                              <td className="p-2 uppercase">{r.mode}</td>
+                              {isTeacher && <td className="p-2">{r.studentName}</td>}
+                              <td className="p-2">{r.score == null ? '-' : r.score}</td>
+                              <td className="p-2">{r.total}</td>
+                              <td className="p-2">
+                                {r.status === 'submitted' ? (
+                                  <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">
+                                    Submitted
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs">
+                                    Not submitted
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2">
+                                {r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </>

@@ -6,7 +6,7 @@ const Submission = require('../models/AssignmentSubmission');
 const Classroom = require('../models/Classroom');
 const FlashcardSet = require('../models/FlashcardSet');
 let Notification;
-try { Notification = require('../models/Notification'); } catch (_) { /* optional */ }
+try { Notification = require('../models/Notification'); } catch (_) {}
 
 const router = express.Router();
 
@@ -41,7 +41,7 @@ router.post('/', async (req, res) => {
       title: set.title,
     });
 
-    // Thông báo cho học sinh trong lớp
+    // Notify students
     if (classroom.students?.length && Notification) {
       const notifs = classroom.students.map((stu) => ({
         userId: stu,
@@ -51,7 +51,6 @@ router.post('/', async (req, res) => {
       }));
       await Notification.insertMany(notifs).catch(() => {});
     }
-    // Socket push
     try {
       const io = req.app.get('io');
       if (io && classroom.students) {
@@ -107,7 +106,7 @@ router.get('/class/:classId', async (req, res) => {
   }
 });
 
-// Lấy chi tiết assignment + bộ thẻ (để làm bài)
+// Lấy chi tiết assignment + bộ thẻ
 router.get('/:id', async (req, res) => {
   try {
     const a = await Assignment.findById(req.params.id)
@@ -167,7 +166,7 @@ router.post('/:id/submit', async (req, res) => {
       submittedAt: now,
     });
 
-    // Thông báo cho giáo viên
+    // Notify teacher
     try {
       const classroom = await Classroom.findById(a.classId).populate('createdBy', '_id');
       if (Notification && classroom?.createdBy?._id) {
@@ -188,6 +187,100 @@ router.post('/:id/submit', async (req, res) => {
       return res.status(409).json({ message: 'You already submitted this assignment' });
     }
     console.error('Submit error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/* =========================
+   NEW: Kết quả (Results)
+   ========================= */
+// GET /api/assignments/class/:classId/results?viewerId=...
+// - Nếu viewer là giáo viên của lớp: trả điểm TẤT CẢ học sinh (kể cả chưa nộp)
+// - Nếu viewer là học sinh: chỉ trả điểm của chính học sinh đó
+router.get('/class/:classId/results', async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { viewerId } = req.query;
+
+    const classroom = await Classroom.findById(classId)
+      .populate('createdBy', '_id username')
+      .populate('students', '_id username');
+    if (!classroom) return res.status(404).json({ message: 'Classroom not found' });
+
+    const isTeacher = viewerId && String(classroom.createdBy?._id) === String(viewerId);
+
+    const assignments = await Assignment.find({ classId })
+      .select('_id title mode deadline totalQuestions')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const aIds = assignments.map((a) => a._id);
+    const subQuery = { assignmentId: { $in: aIds } };
+    if (!isTeacher && viewerId) subQuery['student'] = viewerId;
+
+    const subs = await Submission.find(subQuery)
+      .populate('student', '_id username')
+      .select('assignmentId student score total submittedAt')
+      .lean();
+
+    // Map submissions: assignmentId -> studentId -> submission
+    const subMap = {};
+    for (const s of subs) {
+      const aId = String(s.assignmentId);
+      const uId = String(s.student?._id || s.student);
+      if (!subMap[aId]) subMap[aId] = {};
+      subMap[aId][uId] = s;
+    }
+
+    const results = [];
+    if (isTeacher) {
+      // Tất cả học sinh x tất cả bài
+      for (const a of assignments) {
+        for (const stu of classroom.students || []) {
+          const s = subMap[String(a._id)]?.[String(stu._id)];
+          results.push({
+            assignmentId: a._id,
+            assignmentTitle: a.title,
+            mode: a.mode,
+            deadline: a.deadline,
+            total: s?.total ?? (a.totalQuestions || 0),
+            studentId: stu._id,
+            studentName: stu.username,
+            score: s?.score ?? null,
+            submittedAt: s?.submittedAt ?? null,
+            status: s ? 'submitted' : 'not_submitted',
+          });
+        }
+      }
+    } else {
+      // Chỉ kết quả của chính học sinh
+      const me = viewerId;
+      for (const a of assignments) {
+        const s = subMap[String(a._id)]?.[String(me)];
+        if (s) {
+          results.push({
+            assignmentId: a._id,
+            assignmentTitle: a.title,
+            mode: a.mode,
+            deadline: a.deadline,
+            total: s.total ?? (a.totalQuestions || 0),
+            studentId: s.student?._id || s.student,
+            studentName: s.student?.username || '',
+            score: s.score,
+            submittedAt: s.submittedAt,
+            status: 'submitted',
+          });
+        }
+      }
+    }
+
+    res.json({
+      role: isTeacher ? 'teacher' : 'student',
+      assignments,
+      results,
+    });
+  } catch (err) {
+    console.error('Results error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
