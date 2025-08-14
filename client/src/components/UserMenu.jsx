@@ -15,7 +15,7 @@ import avatar5 from '../assets/image/avatar5.jpeg';
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 const SOCKET_URL = API_BASE;
 
-// ✅ Regex giống đăng ký: chữ Unicode có dấu + số + '.' + '_' + khoảng trắng; 3–20 ký tự
+// Username rule: Unicode letters (incl. Vietnamese) + numbers + '.' + '_' + spaces; length 3–20
 const USERNAME_REGEX = /^[\p{L}\p{M}\p{N}._ ]{3,20}$/u;
 const looksLikeEmail = (s) => /@/.test(s || '');
 const isAllDigits = (s) => /^\d+$/.test((s || '').replace(/\s+/g, ''));
@@ -69,7 +69,7 @@ export default function UserMenu({
   // username check realtime
   const [uChecking, setUChecking] = useState(false);
   const [uAvail, setUAvail] = useState(null); // null | true | false
-  const [uError, setUError] = useState('');   // chuỗi lỗi hiển thị
+  const [uError, setUError] = useState('');   // error text
 
   // ===== Socket
   const socketRef = useRef(null);
@@ -128,7 +128,7 @@ export default function UserMenu({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [userData, showSettings]);
 
-  // ===== Click-outside (FIX: thêm menuRef & bellRef vào deps để hết cảnh báo ESLint)
+  // ===== Click-outside (ESLint-safe deps)
   useEffect(() => {
     const onDocMouseDown = (e) => {
       if (bellRef.current && !bellRef.current.contains(e.target)) setShowNotif(false);
@@ -188,7 +188,7 @@ export default function UserMenu({
       await refreshBellForTeacher();
       if (approve && currentClassId && String(currentClassId) === String(n.classId)) onApproved?.();
     } catch {
-      // ignore alert theo yêu cầu
+      // ignore alert
     } finally {
       setActingId(null);
     }
@@ -201,30 +201,30 @@ export default function UserMenu({
     setUError('');
     setUAvail(null);
 
-    // Nếu không đổi username -> coi như OK, khỏi check
+    // If name unchanged -> skip checks
     if (usernameClean === (origUsername || '')) return;
 
-    // Format rule như signup
+    // Same rules as signup
     if (!USERNAME_REGEX.test(usernameClean)) {
-      setUError('3–20 ký tự, cho phép chữ tiếng Việt, khoảng trắng, dấu chấm và gạch dưới');
+      setUError('3–20 characters. Letters (incl. Vietnamese), spaces, dot, and underscore allowed.');
       return;
     }
     if (isAllDigits(usernameClean)) {
-      setUError('Username không thể chỉ toàn số');
+      setUError('Username cannot be numbers only.');
       return;
     }
     if (looksLikeEmail(usernameClean)) {
-      setUError('Username không thể là địa chỉ email');
+      setUError('Username cannot be an email address.');
       return;
     }
 
-    // Debounce check trùng
+    // Debounce availability check
     let t = setTimeout(async () => {
       try {
         setUChecking(true);
         const r = await axios.get(`${API_BASE}/api/auth/check-username`, { params: { username: usernameClean } });
         setUAvail(!!r.data?.available);
-        if (!r.data?.available) setUError('Username đã được dùng');
+        if (!r.data?.available) setUError('Username is already taken.');
       } catch {
         setUAvail(null);
       } finally {
@@ -247,7 +247,6 @@ export default function UserMenu({
   const onPickSuggested = (url) => { setUseSuggested(true); setSuggestedUrl(url); setFileObj(null); setPreview(url); };
 
   const canSave = useMemo(() => {
-    // Nếu đổi username: phải không có uError và (uAvail !== false)
     const changingName = usernameClean !== (origUsername || '');
     const nameOk = !changingName || (!uError && uAvail !== false);
     return nameOk;
@@ -257,10 +256,10 @@ export default function UserMenu({
     if (!userData?._id) return;
 
     if (usernameClean !== (origUsername || '')) {
-      if (!USERNAME_REGEX.test(usernameClean)) { setUError('3–20 ký tự, cho phép chữ tiếng Việt, khoảng trắng, dấu chấm và gạch dưới'); return; }
-      if (isAllDigits(usernameClean)) { setUError('Username không thể chỉ toàn số'); return; }
-      if (looksLikeEmail(usernameClean)) { setUError('Username không thể là địa chỉ email'); return; }
-      if (uAvail === false) { setUError('Username đã được dùng'); return; }
+      if (!USERNAME_REGEX.test(usernameClean)) { setUError('3–20 characters. Letters (incl. Vietnamese), spaces, dot, and underscore allowed.'); return; }
+      if (isAllDigits(usernameClean)) { setUError('Username cannot be numbers only.'); return; }
+      if (looksLikeEmail(usernameClean)) { setUError('Username cannot be an email address.'); return; }
+      if (uAvail === false) { setUError('Username is already taken.'); return; }
     }
 
     try {
@@ -284,9 +283,9 @@ export default function UserMenu({
     } catch (err) {
       const msg = err?.response?.data?.message || '';
       if (err?.response?.status === 409 || /taken/i.test(msg)) {
-        setUError('Username đã được dùng');
+        setUError('Username is already taken.');
       } else if (err?.response?.status === 400) {
-        setUError(msg || 'Username không hợp lệ');
+        setUError(msg || 'Invalid username.');
       } else {
         alert('Update failed. Please try again.');
       }
@@ -295,7 +294,7 @@ export default function UserMenu({
 
   return (
     <div className="flex items-center gap-4 ml-4">
-      {/* ===== Chuông ===== */}
+      {/* ===== Bell ===== */}
       <div className="relative" ref={bellRef}>
         <button onClick={toggleNotif} className="relative p-2 rounded-full hover:bg-gray-100" title="Notifications">
           <FaBell className="text-gray-700" size={20} />
