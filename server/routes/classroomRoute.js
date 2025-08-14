@@ -1,29 +1,36 @@
-// routes/classroomRoute.js
+// server/routes/classroomRoute.js
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const Classroom = require('../models/Classroom');
 
+const Classroom = require('../models/Classroom');
+const Notification = require('../models/Notification');
 require('../models/User');
 require('../models/FlashcardSet');
 
-// Create class
+// Helper
+const toOid = (v) => (mongoose.Types.ObjectId.isValid(v) ? new mongoose.Types.ObjectId(v) : v);
+const emitTo = (req, userId, event, payload) => {
+  try {
+    const io = req.app.get('io');
+    if (io && userId) io.to(String(userId)).emit(event, payload || {});
+  } catch (_) {}
+};
+
+/* =========================
+   CREATE CLASS
+   ========================= */
 router.post('/', async (req, res) => {
   try {
     const { name, description, createdBy } = req.body;
-    const existing = await Classroom.findOne({
-      name,
-      createdBy: new mongoose.Types.ObjectId(createdBy),
-    });
+    const existing = await Classroom.findOne({ name, createdBy: toOid(createdBy) });
     if (existing) return res.status(409).json({ error: 'Lớp đã tồn tại' });
 
-    const classroom = new Classroom({
+    const classroom = await Classroom.create({
       name,
       description,
-      createdBy: new mongoose.Types.ObjectId(createdBy),
+      createdBy: toOid(createdBy),
     });
-
-    await classroom.save();
     res.status(201).json({ message: 'Lớp được tạo', classroomId: classroom._id });
   } catch (err) {
     console.error('Create class error:', err);
@@ -31,7 +38,9 @@ router.post('/', async (req, res) => {
   }
 });
 
-// List classes by teacher
+/* =========================
+   LIST BY TEACHER / JOINED
+   ========================= */
 router.get('/by-user/:userId', async (req, res) => {
   try {
     const classes = await Classroom.find({ createdBy: req.params.userId })
@@ -43,7 +52,6 @@ router.get('/by-user/:userId', async (req, res) => {
   }
 });
 
-// List classes joined by a student
 router.get('/joined/:userId', async (req, res) => {
   try {
     const classes = await Classroom.find({ students: req.params.userId })
@@ -55,7 +63,9 @@ router.get('/joined/:userId', async (req, res) => {
   }
 });
 
-// Get class by id (include joinRequests so student sees "pending")
+/* =========================
+   GET CLASS DETAIL
+   ========================= */
 router.get('/:id', async (req, res) => {
   try {
     const classroom = await Classroom.findById(req.params.id)
@@ -73,39 +83,37 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Student joins directly (no approval) – currently unused
-router.post('/:id/join', async (req, res) => {
-  try {
-    const { studentId } = req.body;
-    const classroom = await Classroom.findById(req.params.id);
-    if (!classroom) return res.status(404).json({ error: 'Class not found' });
-
-    if (!classroom.students.includes(studentId)) classroom.students.push(studentId);
-    await classroom.save();
-    res.json({ message: 'Tham gia lớp thành công' });
-  } catch (err) {
-    console.error('Lỗi tham gia lớp:', err);
-    res.status(500).json({ error: 'Không thể tham gia lớp' });
-  }
-});
-
-// Student sends JOIN REQUEST (needs approval)
+/* =========================
+   STUDENT REQUEST JOIN (PENDING)
+   Emits: join:pending -> teacher
+   ========================= */
 router.post('/:id/request-join', async (req, res) => {
   try {
     const { studentId } = req.body;
     const classroom = await Classroom.findById(req.params.id);
     if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
-    if (classroom.students.some(s => s.toString() === studentId))
+    // đã trong lớp
+    if ((classroom.students || []).some((s) => String(s) === String(studentId))) {
       return res.status(400).json({ error: 'Already joined' });
+    }
 
+    // đã có pending
     const existed = (classroom.joinRequests || []).find(
-      r => r.student.toString() === studentId && r.status === 'pending'
+      (r) => String(r.student) === String(studentId) && r.status === 'pending'
     );
-    if (existed) return res.json({ ok: true }); // idempotent
+    if (!existed) {
+      classroom.joinRequests.push({ student: toOid(studentId), status: 'pending', createdAt: new Date() });
+      await classroom.save();
+    }
 
-    classroom.joinRequests.push({ student: studentId, status: 'pending' });
-    await classroom.save();
+    // 🔔 báo cho giáo viên (badge chuông)
+    emitTo(req, classroom.createdBy, 'join:pending', {
+      classId: classroom._id,
+      className: classroom.name,
+      createdAt: Date.now(),
+    });
+
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -113,7 +121,10 @@ router.post('/:id/request-join', async (req, res) => {
   }
 });
 
-// Teacher approves / rejects
+/* =========================
+   TEACHER APPROVE / REJECT
+   Emits: notif:new -> student (and keeps pending count correct for teacher)
+   ========================= */
 router.post('/:id/approve', async (req, res) => {
   try {
     const { studentId, approve } = req.body; // true | false
@@ -121,18 +132,37 @@ router.post('/:id/approve', async (req, res) => {
     if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
     const idx = (classroom.joinRequests || []).findIndex(
-      r => r.student.toString() === studentId && r.status === 'pending'
+      (r) => String(r.student) === String(studentId) && r.status === 'pending'
     );
     if (idx === -1) return res.status(404).json({ error: 'Request not found' });
 
     classroom.joinRequests[idx].status = approve ? 'approved' : 'rejected';
     if (approve) {
-      classroom.joinRequests[idx].approvedAt = new Date(); // 🔹 đánh dấu thời điểm duyệt
-      if (!classroom.students.includes(studentId)) {
-        classroom.students.push(studentId);
+      classroom.joinRequests[idx].approvedAt = new Date();
+      if (!(classroom.students || []).some((s) => String(s) === String(studentId))) {
+        classroom.students.push(toOid(studentId));
       }
     }
     await classroom.save();
+
+    // 🔔 tạo Notification cho học sinh
+    const notif = await Notification.create({
+      user: toOid(studentId),
+      type: approve ? 'join_approved' : 'join_rejected',
+      title: approve ? 'Join request approved' : 'Join request rejected',
+      message: approve
+        ? `You have been approved to join "${classroom.name}".`
+        : `Your request to join "${classroom.name}" was rejected.`,
+      link: approve ? `/classes/${classroom._id}` : `/`,
+      seen: false,
+      meta: { classId: classroom._id, approve: !!approve },
+    });
+
+    // 🔴 emit realtime tới học sinh (UserMenu đang nghe 'notif:new')
+    emitTo(req, studentId, 'notif:new', { _id: notif._id });
+
+    // (Tuỳ chọn) có thể emit lại join:pending để GV tự refresh badge; UserMenu đã gọi /pending-count sau approve nên không bắt buộc.
+
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -140,12 +170,14 @@ router.post('/:id/approve', async (req, res) => {
   }
 });
 
-// Pending count for bell
+/* =========================
+   PENDING COUNT & LIST (CHO CHUÔNG GIÁO VIÊN)
+   ========================= */
 router.get('/pending-count/:teacherId', async (req, res) => {
   try {
     const classes = await Classroom.find({ createdBy: req.params.teacherId });
     const count = classes.reduce(
-      (sum, c) => sum + (c.joinRequests || []).filter(r => r.status === 'pending').length,
+      (sum, c) => sum + (c.joinRequests || []).filter((r) => r.status === 'pending').length,
       0
     );
     res.json({ count });
@@ -154,14 +186,13 @@ router.get('/pending-count/:teacherId', async (req, res) => {
   }
 });
 
-// List items for the bell dropdown
 router.get('/pending-requests/:teacherId', async (req, res) => {
   try {
     const classes = await Classroom.find({ createdBy: req.params.teacherId })
       .populate('joinRequests.student', 'username avatar');
     const list = [];
-    classes.forEach(c => {
-      (c.joinRequests || []).forEach(r => {
+    classes.forEach((c) => {
+      (c.joinRequests || []).forEach((r) => {
         if (r.status === 'pending' && r.student) {
           list.push({
             classId: c._id,
@@ -169,23 +200,20 @@ router.get('/pending-requests/:teacherId', async (req, res) => {
             studentId: r.student._id,
             studentName: r.student.username,
             studentAvatar: r.student.avatar,
-            createdAt: r.createdAt
+            createdAt: r.createdAt,
           });
         }
       });
     });
-
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: 'Failed to fetch pending requests' });
   }
 });
 
-/* ===========================================================
-   NEW: Members management – list + search/sort/pagination
-   =========================================================== */
-
-// GET /api/classrooms/:id/members?q=&page=1&limit=10&sort=joinedAt|username&order=asc|desc
+/* =========================
+   MEMBERS LIST & REMOVE
+   ========================= */
 router.get('/:id/members', async (req, res) => {
   try {
     const { q = '', page = 1, limit = 10, sort = 'joinedAt', order = 'desc' } = req.query;
@@ -194,16 +222,15 @@ router.get('/:id/members', async (req, res) => {
       .populate('students', 'username email avatar createdAt');
     if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
-    // map joinedAt từ joinRequests.approvedAt (nếu có), fallback request.createdAt, cuối cùng là createdAt user
+    // map joinedAt từ joinRequests.approvedAt (fallback request.createdAt / user.createdAt)
     const joinedMap = {};
-    (classroom.joinRequests || []).forEach(r => {
+    (classroom.joinRequests || []).forEach((r) => {
       if (r.status === 'approved' && r.student) {
         joinedMap[String(r.student)] = r.approvedAt || r.createdAt || null;
       }
     });
 
-    // dựng danh sách
-    let list = (classroom.students || []).map(s => ({
+    let list = (classroom.students || []).map((s) => ({
       _id: s._id,
       username: s.username,
       email: s.email,
@@ -211,29 +238,23 @@ router.get('/:id/members', async (req, res) => {
       joinedAt: joinedMap[String(s._id)] || s.createdAt || null,
     }));
 
-    // filter
     const qq = (q || '').trim().toLowerCase();
     if (qq) {
       list = list.filter(
-        it =>
+        (it) =>
           (it.username || '').toLowerCase().includes(qq) ||
           (it.email || '').toLowerCase().includes(qq)
       );
     }
 
-    // sort
     const dir = order === 'asc' ? 1 : -1;
     list.sort((a, b) => {
-      if (sort === 'username') {
-        return (a.username || '').localeCompare(b.username || '') * dir;
-      }
-      // joinedAt default
+      if (sort === 'username') return (a.username || '').localeCompare(b.username || '') * dir;
       const ta = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
       const tb = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
       return (ta - tb) * dir;
     });
 
-    // pagination
     const p = Math.max(parseInt(page, 10) || 1, 1);
     const lim = Math.max(parseInt(limit, 10) || 10, 1);
     const total = list.length;
@@ -248,21 +269,18 @@ router.get('/:id/members', async (req, res) => {
   }
 });
 
-// DELETE /api/classrooms/:id/members/:studentId  { requesterId }
 router.delete('/:id/members/:studentId', async (req, res) => {
   try {
     const { requesterId } = req.body || {};
     const classroom = await Classroom.findById(req.params.id).select('createdBy students joinRequests');
     if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
-    // chỉ owner mới xoá
     if (!requesterId || String(classroom.createdBy) !== String(requesterId)) {
       return res.status(403).json({ error: 'Only class owner can remove members' });
     }
 
-    // remove from students array
-    const before = classroom.students.length;
-    classroom.students = classroom.students.filter(s => String(s) !== String(req.params.studentId));
+    const before = (classroom.students || []).length;
+    classroom.students = (classroom.students || []).filter((s) => String(s) !== String(req.params.studentId));
     if (classroom.students.length === before) {
       return res.status(404).json({ error: 'Student not in class' });
     }
