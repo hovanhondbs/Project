@@ -1,6 +1,6 @@
 // src/pages/ClassroomDetail.jsx
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import SearchInput from '../components/SearchInput';
@@ -23,60 +23,82 @@ export default function ClassroomDetail() {
   const [pending, setPending] = useState(false);
   const [bell, setBell] = useState(0);
 
-  const userId = localStorage.getItem('userId');
+  const [assignments, setAssignments] = useState([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [mySets, setMySets] = useState([]);
+  const [createForm, setCreateForm] = useState({ setId: '', mode: 'test', deadline: '' });
 
-  const fetchClass = async () => {
+  const userIdLS = localStorage.getItem('userId');
+
+  // ---- Fetch helpers ----
+  const fetchClass = useCallback(async () => {
     const res = await axios.get(`${API}/api/classrooms/${id}`);
     setClassData(res.data);
     return res.data;
-  };
-
-  const fetchUser = async () => {
-    if (!userId) return null;
-    const res = await axios.get(`${API}/api/user/${userId}`);
-    setUserData(res.data);
-    return res.data;
-  };
-
-  useEffect(() => {
-    (async () => {
-      await Promise.all([fetchUser(), fetchClass()]);
-      setLoading(false);
-    })().catch(console.error);
   }, [id]);
 
-  // mark pending for student
+  const fetchUser = useCallback(async () => {
+    const uid = userIdLS;
+    if (!uid) return null;
+    const res = await axios.get(`${API}/api/user/${uid}`);
+    setUserData(res.data);
+    return res.data;
+  }, [userIdLS]);
+
+  const fetchAssignments = useCallback(
+    async (sid) => {
+      const r = await axios.get(`${API}/api/assignments/class/${id}`, {
+        params: { studentId: sid || userIdLS },
+      });
+      setAssignments(r.data || []);
+    },
+    [id, userIdLS]
+  );
+
+  // ---- Initial load ----
   useEffect(() => {
-    if (!classData || !userId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [u] = await Promise.all([fetchUser(), fetchClass()]);
+        if (cancelled) return;
+        await fetchAssignments(u?._id || userIdLS);
+        if (!cancelled) setLoading(false);
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, userIdLS, fetchUser, fetchClass, fetchAssignments]);
+
+  // ---- mark pending for student ----
+  useEffect(() => {
+    if (!classData || !userIdLS) return;
     const mine = (classData.joinRequests || []).find(
-      r => (r.student?._id || r.student)?.toString() === userId && r.status === 'pending'
+      (r) => (r.student?._id || r.student)?.toString() === userIdLS && r.status === 'pending'
     );
     setPending(!!mine);
-  }, [classData, userId]);
+  }, [classData, userIdLS]);
 
-  // bell badge for teacher
+  // ---- bell badge for teacher ----
   useEffect(() => {
     if (!userData || !classData) return;
-    const isTeacher = userData._id === classData.createdBy._id;
+    const isTeacher = String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
     if (!isTeacher) return;
-    axios.get(`${API}/api/classrooms/pending-count/${userData._id}`)
-      .then(r => setBell(r.data?.count || 0))
+    axios
+      .get(`${API}/api/classrooms/pending-count/${userData._id}`)
+      .then((r) => setBell(r.data?.count || 0))
       .catch(() => setBell(0));
   }, [userData, classData]);
 
-  const handleLogout = () => {
-    localStorage.clear();
-    window.location.href = '/';
-  };
-
-  if (loading || !classData || !userData) return <div className="p-10">Loading...</div>;
-
-  const isTeacher = userData._id === classData.createdBy._id;
-  const isStudent = userData.role === 'User';
-  const alreadyJoined = classData.students.some(s => s._id === userData._id);
+  const isTeacher =
+    !!userData && !!classData && String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
+  const isStudent = userData?.role === 'User';
+  const alreadyJoined =
+    !!classData && classData.students.some((s) => String(s._id || s) === String(userData?._id));
   const canSeeTabs = isTeacher || alreadyJoined;
 
-  // student requests to join (approval needed)
+  // ---- student requests to join ----
   const requestJoin = async () => {
     try {
       await axios.post(`${API}/api/classrooms/${id}/request-join`, { studentId: userData._id });
@@ -86,6 +108,49 @@ export default function ClassroomDetail() {
       alert('Error sending join request.');
     }
   };
+
+  // ---- Teacher: open modal + load own sets ----
+  const openCreate = async () => {
+    try {
+      const uid = userIdLS || userData?._id;
+      if (!uid) throw new Error('No userId');
+      const r = await axios.get(`${API}/api/flashcards/user/${uid}`);
+      setMySets(Array.isArray(r.data) ? r.data : []);
+    } catch {
+      setMySets([]);
+    }
+    setCreateForm({ setId: '', mode: 'test', deadline: '' });
+    setShowCreate(true);
+  };
+
+  const createAssignment = async () => {
+    if (!createForm.setId || !createForm.deadline) {
+      alert('Please choose a set and a deadline.');
+      return;
+    }
+    try {
+      const uid = userIdLS || userData?._id;
+      await axios.post(`${API}/api/assignments`, {
+        classId: id,
+        setId: createForm.setId,
+        mode: createForm.mode,
+        deadline: createForm.deadline,
+        createdBy: uid,
+      });
+      setShowCreate(false);
+      await fetchAssignments(uid);
+      setActiveTab('assignments');
+    } catch (e) {
+      alert(e?.response?.data?.message || 'Failed to create assignment');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.clear();
+    window.location.href = '/';
+  };
+
+  if (loading || !classData || !userData) return <div className="p-10">Loading...</div>;
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -115,45 +180,63 @@ export default function ClassroomDetail() {
 
           {isTeacher ? (
             <div className="flex gap-3">
-              <EditClassButton classData={classData} onUpdate={fetchClass} />
+              <EditClassButton
+                classData={classData}
+                onUpdate={async () => {
+                  await fetchClass();
+                  await fetchAssignments(userIdLS || userData?._id);
+                }}
+              />
               <DeleteClassButton classId={id} onDeleteSuccess={() => navigate('/library')} />
               <ShareClassButton classId={id} />
             </div>
           ) : (
-            isStudent && !alreadyJoined && (
-              pending ? (
-                <button disabled className="bg-gray-300 text-gray-700 px-5 py-2 rounded-lg font-semibold cursor-not-allowed">
-                  Pending approval
-                </button>
-              ) : (
-                <button onClick={requestJoin} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold">
-                  Join Class
-                </button>
-              )
-            )
+            isStudent &&
+            !alreadyJoined &&
+            (pending ? (
+              <button
+                disabled
+                className="bg-gray-300 text-gray-700 px-5 py-2 rounded-lg font-semibold cursor-not-allowed"
+              >
+                Pending approval
+              </button>
+            ) : (
+              <button
+                onClick={requestJoin}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold"
+              >
+                Join Class
+              </button>
+            ))
           )}
         </div>
 
-        {/* Tabs: HIDDEN until student joined */}
+        {/* Tabs */}
         {canSeeTabs ? (
           <>
             <div className="mb-6 border-b border-gray-300">
               <nav className="flex gap-6">
                 <button
                   onClick={() => setActiveTab('assignments')}
-                  className={`pb-2 font-medium ${activeTab === 'assignments' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                  className={`pb-2 font-medium ${
+                    activeTab === 'assignments' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'
+                  }`}
                 >
                   Assignments
                 </button>
                 <button
                   onClick={() => setActiveTab('members')}
-                  className={`pb-2 font-medium ${activeTab === 'members' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                  className={`pb-2 font-medium ${
+                    activeTab === 'members' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'
+                  }`}
                 >
                   Members
                 </button>
                 <button
                   onClick={() => setActiveTab('results')}
-                  className={`pb-2 font-medium ${activeTab === 'results' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
+                  className={`pb-2 font-medium ${
+                    activeTab === 'results' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'
+                  }`}
                 >
                   Results
                 </button>
@@ -161,18 +244,163 @@ export default function ClassroomDetail() {
             </div>
 
             <div>
-              {activeTab === 'assignments' && <p className="text-gray-500">No assignments yet.</p>}
+              {activeTab === 'assignments' && (
+                <div className="bg-white rounded-xl p-6 shadow">
+                  {isTeacher && (
+                    <div className="mb-4 flex justify-end">
+                      <button
+                        onClick={openCreate}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+                      >
+                        + Create assignment
+                      </button>
+                    </div>
+                  )}
+
+                  {assignments.length === 0 ? (
+                    <p className="text-gray-500">No assignments yet.</p>
+                  ) : (
+                    <div className="divide-y">
+                      {assignments.map((a) => (
+                        <div key={a._id} className="py-4 flex items-center justify-between">
+                          <div>
+                            <div className="font-semibold text-gray-800">
+                              {a.title}{' '}
+                              <span className="text-xs ml-2 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                {a.mode.toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Questions: {a.totalQuestions} • Due:{' '}
+                              {new Date(a.deadline).toLocaleString()} • {a.closed ? 'Closed' : 'Open'}
+                              {isTeacher ? ` • Submissions: ${a.submissionsCount}` : ''}
+                            </div>
+                            {!isTeacher && a.submitted && (
+                              <div className="text-xs text-green-700 mt-1">
+                                Submitted • Score: {a.score}/{a.total}
+                              </div>
+                            )}
+                          </div>
+
+                          {!isTeacher &&
+                            (a.submitted ? (
+                              <Link
+                                to={`/assignments/${a._id}/take`}
+                                className="text-gray-600 hover:text-gray-800 underline text-sm"
+                              >
+                                View score
+                              </Link>
+                            ) : a.closed ? (
+                              <span className="text-sm text-gray-400">Closed</span>
+                            ) : (
+                              <Link
+                                to={`/assignments/${a._id}/take`}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
+                              >
+                                Start
+                              </Link>
+                            ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {activeTab === 'members' && (
                 <ul className="list-disc list-inside space-y-1 text-gray-700">
-                  {classData.students.map((s) => <li key={s._id}>{s.username}</li>)}
+                  {classData.students.map((s) => (
+                    <li key={s._id || s}>{s.username || s}</li>
+                  ))}
                 </ul>
               )}
-              {activeTab === 'results' && <p className="text-gray-500">Tracking feature will be updated soon.</p>}
+
+              {activeTab === 'results' && (
+                <p className="text-gray-500">Tracking feature will be updated soon.</p>
+              )}
             </div>
           </>
         ) : (
           <div className="text-gray-500 italic">
             You need to join the class to see assignments and members.
+          </div>
+        )}
+
+        {/* Create modal */}
+        {showCreate && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow relative">
+              <button className="absolute top-3 right-3 text-gray-500" onClick={() => setShowCreate(false)}>
+                ✕
+              </button>
+              <h3 className="text-lg font-semibold mb-4">New Assignment</h3>
+
+              <label className="block text-sm font-medium mb-1">Flashcard set</label>
+              <select
+                value={createForm.setId}
+                onChange={(e) => setCreateForm({ ...createForm, setId: e.target.value })}
+                className="w-full border rounded px-3 py-2 mb-1"
+              >
+                <option value="">-- Choose a set --</option>
+                {mySets.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.title} ({s.cards?.length || 0} terms)
+                  </option>
+                ))}
+              </select>
+              {mySets.length === 0 && (
+                <div className="text-xs text-gray-500 mb-3">
+                  You have no sets yet. <Link to="/flashcards" className="text-blue-600 underline">Create one</Link>.
+                </div>
+              )}
+
+              <label className="block text-sm font-medium mb-1">Mode</label>
+              <div className="flex gap-4 mb-3">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="test"
+                    checked={createForm.mode === 'test'}
+                    onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}
+                  />
+                  <span>Test (multiple choice)</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="mode"
+                    value="learn"
+                    checked={createForm.mode === 'learn'}
+                    onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}
+                  />
+                  <span>Learn (typed answer)</span>
+                </label>
+              </div>
+
+              <label className="block text-sm font-medium mb-1">Deadline</label>
+              <input
+                type="datetime-local"
+                value={createForm.deadline}
+                onChange={(e) => setCreateForm({ ...createForm, deadline: e.target.value })}
+                className="w-full border rounded px-3 py-2 mb-4"
+              />
+
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowCreate(false)} className="px-4 py-2">
+                  Cancel
+                </button>
+                <button
+                  onClick={createAssignment}
+                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
+                >
+                  Create
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Each question has 30s. Total time = 30s × number of questions.
+              </p>
+            </div>
           </div>
         )}
       </main>

@@ -15,7 +15,7 @@ import AchievementsPage from './pages/AchievementsPage';
 import CreateClassPage from './pages/CreateClassPage';
 import ClassroomDetail from './pages/ClassroomDetail';
 import SearchPage from './pages/SearchPage';
-
+import AssignmentTake from './pages/AssignmentTake';
 function App() {
   return (
     <BrowserRouter>
@@ -37,7 +37,7 @@ function App() {
         <Route path="/create-class" element={<CreateClassPage />} />
         <Route path="/classes/:id" element={<ClassroomDetail />} />
         <Route path="/search" element={<SearchPage />} />
-     
+        <Route path="/assignments/:id/take" element={<AssignmentTake />} />
     
       </Routes>
     </BrowserRouter>
