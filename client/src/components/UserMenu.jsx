@@ -46,6 +46,11 @@ export default function UserMenu({
   const localAvatarRef = useRef(null);
   const menuRef = avatarRef || localAvatarRef;
 
+  // ===== Flags theo role
+  const role = String(userData?.role || '').toLowerCase();
+  const isTeacher = role === 'teacher';
+  const isAdmin = role === 'admin';
+
   // ===== Notifications
   const [showNotif, setShowNotif] = useState(false);
   const [teacherNotifs, setTeacherNotifs] = useState([]);
@@ -73,7 +78,6 @@ export default function UserMenu({
 
   // ===== Socket
   const socketRef = useRef(null);
-  const isTeacher = String(userData?.role || '').toLowerCase() === 'teacher';
 
   useEffect(() => {
     if (!userData?._id) return;
@@ -136,7 +140,7 @@ export default function UserMenu({
     };
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [setDropdownOpen, setShowNotif, menuRef, bellRef]);
+  }, [setDropdownOpen, menuRef]);
 
   // ===== Badge HS khi load
   useEffect(() => {
@@ -188,7 +192,7 @@ export default function UserMenu({
       await refreshBellForTeacher();
       if (approve && currentClassId && String(currentClassId) === String(n.classId)) onApproved?.();
     } catch {
-      // ignore alert
+      // ignore
     } finally {
       setActingId(null);
     }
@@ -201,10 +205,8 @@ export default function UserMenu({
     setUError('');
     setUAvail(null);
 
-    // If name unchanged -> skip checks
     if (usernameClean === (origUsername || '')) return;
 
-    // Same rules as signup
     if (!USERNAME_REGEX.test(usernameClean)) {
       setUError('3–20 characters. Letters (incl. Vietnamese), spaces, dot, and underscore allowed.');
       return;
@@ -218,7 +220,6 @@ export default function UserMenu({
       return;
     }
 
-    // Debounce availability check
     let t = setTimeout(async () => {
       try {
         setUChecking(true);
@@ -294,7 +295,7 @@ export default function UserMenu({
 
   return (
     <div className="flex items-center gap-4 ml-4">
-      {/* ===== Bell ===== */}
+      {/* ===== Bell (giữ nguyên, admin vẫn có thể xem thông báo nếu có) ===== */}
       <div className="relative" ref={bellRef}>
         <button onClick={toggleNotif} className="relative p-2 rounded-full hover:bg-gray-100" title="Notifications">
           <FaBell className="text-gray-700" size={20} />
@@ -376,28 +377,49 @@ export default function UserMenu({
                 </>
               )}
             </div>
-            <ul className="text-sm text-gray-700">
-              <li>
-                <Link to="/achievements" className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100">
-                  <FaTrophy /> Achievements
-                </Link>
-              </li>
-              <li>
-                <button onClick={() => setShowSettings(true)} className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100">
-                  <FaCog /> Profile & Avatar
-                </button>
-              </li>
-              <li>
-                <button onClick={handleLogout} className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-red-600">
-                  <FaSignOutAlt /> Logout
-                </button>
-              </li>
-            </ul>
+
+            {/* Nếu là Admin: chỉ hiển thị Logout */}
+            {isAdmin ? (
+              <ul className="text-sm text-gray-700">
+                <li>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-red-600"
+                  >
+                    <FaSignOutAlt /> Logout
+                  </button>
+                </li>
+              </ul>
+            ) : (
+              <ul className="text-sm text-gray-700">
+                <li>
+                  <Link to="/achievements" className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100">
+                    <FaTrophy /> Achievements
+                  </Link>
+                </li>
+                <li>
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100"
+                  >
+                    <FaCog /> Profile & Avatar
+                  </button>
+                </li>
+                <li>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left flex items-center gap-2 px-4 py-2 hover:bg-gray-100 text-red-600"
+                  >
+                    <FaSignOutAlt /> Logout
+                  </button>
+                </li>
+              </ul>
+            )}
           </div>
         )}
 
-        {/* ===== Profile editor modal ===== */}
-        {showSettings && (
+        {/* Modal đổi tên & avatar — sẽ không mở được khi là Admin vì không có nút mở */}
+        {showSettings && !isAdmin && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-md relative">
               <button onClick={() => setShowSettings(false)} className="absolute top-3 right-3 text-gray-500 hover:text-black" aria-label="Close">
@@ -413,7 +435,6 @@ export default function UserMenu({
                 className="w-full border px-3 py-2 rounded mb-1"
                 placeholder="John Doe"
               />
-              {/* hint/validation */}
               <div className="text-xs mt-1">
                 {usernameClean !== (origUsername || '') && (
                   <>

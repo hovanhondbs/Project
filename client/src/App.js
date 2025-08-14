@@ -16,6 +16,11 @@ import CreateClassPage from './pages/CreateClassPage';
 import ClassroomDetail from './pages/ClassroomDetail';
 import SearchPage from './pages/SearchPage';
 import AssignmentTake from './pages/AssignmentTake';
+import AdminRoute from './components/AdminRoute';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminReports from './pages/admin/AdminReports';
+
 function App() {
   return (
     <BrowserRouter>
@@ -38,7 +43,29 @@ function App() {
         <Route path="/classes/:id" element={<ClassroomDetail />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/assignments/:id/take" element={<AssignmentTake />} />
-    
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <AdminRoute>
+              <AdminUsers />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/reports"
+          element={
+            <AdminRoute>
+              <AdminReports />
+            </AdminRoute>
+          } />
       </Routes>
     </BrowserRouter>
   );

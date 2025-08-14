@@ -1,6 +1,9 @@
+// src/pages/LoginPage.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+
+const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
 function LoginPage() {
   const [email, setEmail] = useState('');
@@ -9,35 +12,55 @@ function LoginPage() {
   const navigate = useNavigate();
 
   const handleLogin = async () => {
-  const newErrors = {};
-  if (!email.trim()) newErrors.email = true;
-  if (!password.trim()) newErrors.password = true;
-  setErrors(newErrors);
-  if (Object.keys(newErrors).length > 0) return;
+    const newErrors = {};
+    if (!email.trim()) newErrors.email = true;
+    if (!password.trim()) newErrors.password = true;
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) return;
 
-  try {
-    const res = await axios.post('http://localhost:5000/api/auth/login', {
-      email,
-      password,
-    });
+    try {
+      // 1) login
+      const res = await axios.post(`${API}/api/auth/login`, { email, password });
+      const { token, user } = res.data || {};
+      if (!token || !user) {
+        alert('Login response invalid');
+        return;
+      }
 
-    const { token, user } = res.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    localStorage.setItem('userId', user.id);
+      // 2) lưu cơ bản
+      const uid = user.id || user._id;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      if (uid) localStorage.setItem('userId', uid);
 
-    // ✅ gọi thêm để lấy vai trò thực tế
-    const info = await axios.get(`http://localhost:5000/api/user/${user.id}`);
-    localStorage.setItem('userRole', info.data.role);
+      // 3) lấy role (ưu tiên role trả về từ login; nếu không có thì fetch /user/:id)
+      let role = user.role;
+      if (!role && uid) {
+        try {
+          const info = await axios.get(`${API}/api/user/${uid}`);
+          role = info.data?.role || role;
+        } catch {
+          // ignore
+        }
+      }
+      role = role || 'User';
 
-    alert('Login successful!');
-    const path = info.data.role === 'Teacher' ? '/dashboard-teacher' : '/dashboard-user';
-    navigate(path);
-  } catch (err) {
-    alert(err.response?.data?.message || 'Login failed');
-  }
-};
+      // 4) lưu role cho các guard/route khác dùng
+      localStorage.setItem('role', role);
+      localStorage.setItem('userRole', role);
 
+      // 5) điều hướng theo role
+      if (role === 'Admin') {
+        navigate('/admin', { replace: true });
+      } else if (role === 'Teacher') {
+        navigate('/dashboard-teacher', { replace: true });
+      } else {
+        navigate('/dashboard-user', { replace: true });
+      }
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Login failed');
+    }
+  };
 
   return (
     <div className="min-h-screen flex justify-center items-center bg-white px-4 relative">
@@ -51,10 +74,16 @@ function LoginPage() {
       <div className="w-full max-w-md p-8 shadow rounded-lg">
         <div className="text-center mb-6">
           <div className="flex justify-center mb-4 text-lg font-semibold">
-            <button onClick={() => navigate('/signup')} className="text-gray-400 hover:text-black mr-6">Sign up</button>
+            <button onClick={() => navigate('/signup')} className="text-gray-400 hover:text-black mr-6">
+              Sign up
+            </button>
             <span className="border-b-2 border-purple-400 text-gray-900">Log in</span>
           </div>
-          <button className="w-full py-2 border rounded-full flex items-center justify-center gap-2 text-sm hover:bg-gray-50 mb-6">
+          <button
+            className="w-full py-2 border rounded-full flex items-center justify-center gap-2 text-sm hover:bg-gray-50 mb-6"
+            type="button"
+            onClick={() => alert('Google login coming soon')}
+          >
             <img src="https://img.icons8.com/color/20/google-logo.png" alt="Google" />
             Log in with Google
           </button>
@@ -72,9 +101,9 @@ function LoginPage() {
             <input
               type="email"
               value={email}
-              onChange={e => {
+              onChange={(e) => {
                 setEmail(e.target.value);
-                setErrors(prev => ({ ...prev, email: false }));
+                setErrors((prev) => ({ ...prev, email: false }));
               }}
               className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm ${
                 errors.email ? 'border-red-500' : ''
@@ -82,14 +111,15 @@ function LoginPage() {
               placeholder="Enter your email"
             />
           </div>
+
           <div>
             <label className="text-sm text-gray-700">Password</label>
             <input
               type="password"
               value={password}
-              onChange={e => {
+              onChange={(e) => {
                 setPassword(e.target.value);
-                setErrors(prev => ({ ...prev, password: false }));
+                setErrors((prev) => ({ ...prev, password: false }));
               }}
               className={`w-full mt-1 px-3 py-2 border rounded bg-gray-50 text-sm ${
                 errors.password ? 'border-red-500' : ''
@@ -97,11 +127,16 @@ function LoginPage() {
               placeholder="Enter your password"
             />
             <div className="text-right mt-1 text-sm">
-              <button className="text-blue-600 hover:underline" onClick={() => alert('Tính năng chưa hỗ trợ')}>
+              <button
+                type="button"
+                className="text-blue-600 hover:underline"
+                onClick={() => alert('Tính năng chưa hỗ trợ')}
+              >
                 Forgot password?
               </button>
             </div>
           </div>
+
           <button
             onClick={handleLogin}
             className="w-full py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition"
