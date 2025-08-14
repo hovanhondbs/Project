@@ -2,184 +2,148 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-
 const Classroom = require('../models/Classroom');
-const Notification = require('../models/Notification'); // tạo thông báo cho HS
-const User = require('../models/User'); // để lấy tên/ảnh học sinh cho payload GV
+
+require('../models/User');
 require('../models/FlashcardSet');
 
-const { emitToUser } = require('../socket'); // ✅ emit realtime tới user
-
-// ===== Tạo lớp =====
+// Create class
 router.post('/', async (req, res) => {
   try {
     const { name, description, createdBy } = req.body;
-    if (!name?.trim() || !createdBy)
-      return res.status(400).json({ error: 'Thiếu name hoặc createdBy' });
-
     const existing = await Classroom.findOne({
-      name: name.trim(),
+      name,
       createdBy: new mongoose.Types.ObjectId(createdBy),
     });
-    if (existing) return res.status(400).json({ error: 'Tên lớp đã tồn tại' });
+    if (existing) return res.status(409).json({ error: 'Lớp đã tồn tại' });
 
     const classroom = new Classroom({
-      name: name.trim(),
-      description: description ?? '',
+      name,
+      description,
       createdBy: new mongoose.Types.ObjectId(createdBy),
     });
+
     await classroom.save();
-    res.json(classroom);
+    res.status(201).json({ message: 'Lớp được tạo', classroomId: classroom._id });
   } catch (err) {
-    console.error('Lỗi tạo lớp:', err);
+    console.error('Create class error:', err);
     res.status(500).json({ error: 'Không thể tạo lớp' });
   }
 });
 
-// ===== Lớp giáo viên tạo =====
+// List classes by teacher
 router.get('/by-user/:userId', async (req, res) => {
   try {
-    const classrooms = await Classroom.find({
-      createdBy: new mongoose.Types.ObjectId(req.params.userId),
-    })
-      .select('name description students createdBy createdAt')
-      .populate({ path: 'createdBy', select: 'username avatar' });
-
-    res.json(classrooms);
-  } catch (err) {
-    console.error('Lỗi tải danh sách lớp:', err);
-    res.status(500).json({ error: 'Lỗi tải danh sách lớp' });
+    const classes = await Classroom.find({ createdBy: req.params.userId })
+      .populate('students', 'username email avatar')
+      .sort({ createdAt: -1 });
+    res.json(classes);
+  } catch (e) {
+    res.status(500).json({ error: 'Không thể tải danh sách lớp' });
   }
 });
 
-// ===== Lớp người dùng đã tham gia =====
+// List classes joined by a student
 router.get('/joined/:userId', async (req, res) => {
   try {
-    const classrooms = await Classroom.find({
-      students: new mongoose.Types.ObjectId(req.params.userId),
-    })
-      .select('name description students createdBy createdAt')
-      .populate({ path: 'createdBy', select: 'username avatar' });
-
-    res.json(classrooms);
-  } catch (err) {
-    console.error('Lỗi lấy lớp đã tham gia:', err);
+    const classes = await Classroom.find({ students: req.params.userId })
+      .populate('createdBy', 'username')
+      .sort({ createdAt: -1 });
+    res.json(classes);
+  } catch (e) {
     res.status(500).json({ error: 'Không thể tải danh sách lớp đã tham gia' });
   }
 });
 
-// ===== Lấy lớp theo id =====
+// Get class by id (include joinRequests so student sees "pending")
 router.get('/:id', async (req, res) => {
   try {
     const classroom = await Classroom.findById(req.params.id)
       .select('name description students createdBy createdAt flashcards joinRequests')
       .populate({ path: 'createdBy', select: 'username avatar' })
-      .populate('students', 'username email')
+      .populate('students', 'username email avatar')
       .populate('flashcards')
       .populate({ path: 'joinRequests.student', select: 'username avatar' });
 
     if (!classroom) return res.status(404).json({ error: 'Không tìm thấy lớp' });
     res.json(classroom);
   } catch (err) {
-    console.error('Lỗi lấy lớp theo ID:', err);
-    res.status(500).json({ error: 'Không thể lấy thông tin lớp học' });
+    console.error('Get class error:', err);
+    res.status(500).json({ error: 'Không thể tải thông tin lớp' });
   }
 });
 
-// ===== Học sinh gửi REQUEST JOIN (không join thẳng) =====
+// Student joins directly (no approval) – currently unused
+router.post('/:id/join', async (req, res) => {
+  try {
+    const { studentId } = req.body;
+    const classroom = await Classroom.findById(req.params.id);
+    if (!classroom) return res.status(404).json({ error: 'Class not found' });
+
+    if (!classroom.students.includes(studentId)) classroom.students.push(studentId);
+    await classroom.save();
+    res.json({ message: 'Tham gia lớp thành công' });
+  } catch (err) {
+    console.error('Lỗi tham gia lớp:', err);
+    res.status(500).json({ error: 'Không thể tham gia lớp' });
+  }
+});
+
+// Student sends JOIN REQUEST (needs approval)
 router.post('/:id/request-join', async (req, res) => {
   try {
     const { studentId } = req.body;
     const classroom = await Classroom.findById(req.params.id);
     if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
-    if (classroom.students.some(s => String(s) === String(studentId)))
+    if (classroom.students.some(s => s.toString() === studentId))
       return res.status(400).json({ error: 'Already joined' });
 
     const existed = (classroom.joinRequests || []).find(
-      r => String(r.student) === String(studentId) && r.status === 'pending'
+      r => r.student.toString() === studentId && r.status === 'pending'
     );
     if (existed) return res.json({ ok: true }); // idempotent
 
     classroom.joinRequests.push({ student: studentId, status: 'pending' });
     await classroom.save();
-
-    // ✅ Realtime: báo cho giáo viên có yêu cầu mới
-    try {
-      const stu = await User.findById(studentId).select('username avatar');
-      emitToUser(classroom.createdBy, 'join:pending', {
-        classId: classroom._id,
-        className: classroom.name,
-        studentId,
-        studentName: stu?.username || 'Student',
-        studentAvatar: stu?.avatar || '',
-        createdAt: new Date().toISOString(),
-      });
-    } catch (e) {
-      console.warn('emit join:pending error', e?.message);
-    }
-
     res.json({ ok: true });
   } catch (e) {
-    console.error('request-join error', e);
+    console.error(e);
     res.status(500).json({ error: 'Request join error' });
   }
 });
 
-// ===== Giáo viên duyệt / từ chối request trong chuông =====
+// Teacher approves / rejects
 router.post('/:id/approve', async (req, res) => {
   try {
-    const { studentId, approve } = req.body; // true/false
+    const { studentId, approve } = req.body; // true | false
     const classroom = await Classroom.findById(req.params.id);
     if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
     const idx = (classroom.joinRequests || []).findIndex(
-      r => String(r.student) === String(studentId) && r.status === 'pending'
+      r => r.student.toString() === studentId && r.status === 'pending'
     );
     if (idx === -1) return res.status(404).json({ error: 'Request not found' });
 
     classroom.joinRequests[idx].status = approve ? 'approved' : 'rejected';
-    if (approve && !classroom.students.map(String).includes(String(studentId))) {
-      classroom.students.push(studentId);
+    if (approve) {
+      classroom.joinRequests[idx].approvedAt = new Date(); // 🔹 đánh dấu thời điểm duyệt
+      if (!classroom.students.includes(studentId)) {
+        classroom.students.push(studentId);
+      }
     }
     await classroom.save();
-
-    // ✅ Tạo thông báo DB cho HS
-    const title = approve ? 'Join request approved' : 'Join request rejected';
-    const message = approve
-      ? `Your request to join "${classroom.name}" has been approved.`
-      : `Your request to join "${classroom.name}" was rejected.`;
-    const notif = await Notification.create({
-      user: studentId,
-      type: 'join_request_result',
-      title,
-      message,
-      link: `/classes/${req.params.id}`,
-      seen: false,
-      meta: { classId: req.params.id, className: classroom.name, approve }
-    });
-
-    // ✅ Realtime: gửi ngay thông báo cho HS
-    emitToUser(studentId, 'notif:new', {
-      _id: notif._id,
-      title: notif.title,
-      message: notif.message,
-      link: notif.link,
-      type: notif.type,
-      createdAt: notif.createdAt,
-    });
-
     res.json({ ok: true });
   } catch (e) {
-    console.error('approve error', e);
+    console.error(e);
     res.status(500).json({ error: 'Approve error' });
   }
 });
 
-// ===== Badge chuông: đếm request pending của giáo viên =====
+// Pending count for bell
 router.get('/pending-count/:teacherId', async (req, res) => {
   try {
-    const classes = await Classroom.find({ createdBy: req.params.teacherId }, 'joinRequests');
+    const classes = await Classroom.find({ createdBy: req.params.teacherId });
     const count = classes.reduce(
       (sum, c) => sum + (c.joinRequests || []).filter(r => r.status === 'pending').length,
       0
@@ -190,16 +154,15 @@ router.get('/pending-count/:teacherId', async (req, res) => {
   }
 });
 
-// ===== Danh sách request pending để render dropdown =====
+// List items for the bell dropdown
 router.get('/pending-requests/:teacherId', async (req, res) => {
   try {
     const classes = await Classroom.find({ createdBy: req.params.teacherId })
       .populate('joinRequests.student', 'username avatar');
-
     const list = [];
     classes.forEach(c => {
       (c.joinRequests || []).forEach(r => {
-        if (r.status === 'pending') {
+        if (r.status === 'pending' && r.student) {
           list.push({
             classId: c._id,
             className: c.name,
@@ -212,56 +175,103 @@ router.get('/pending-requests/:teacherId', async (req, res) => {
       });
     });
 
-    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: 'Failed to fetch pending requests' });
   }
 });
 
-// ===== UPDATE lớp =====
-router.put('/:id', async (req, res) => {
+/* ===========================================================
+   NEW: Members management – list + search/sort/pagination
+   =========================================================== */
+
+// GET /api/classrooms/:id/members?q=&page=1&limit=10&sort=joinedAt|username&order=asc|desc
+router.get('/:id/members', async (req, res) => {
   try {
-    const { name, description } = req.body;
-    const cls = await Classroom.findById(req.params.id);
-    if (!cls) return res.status(404).json({ error: 'Không tìm thấy lớp' });
+    const { q = '', page = 1, limit = 10, sort = 'joinedAt', order = 'desc' } = req.query;
+    const classroom = await Classroom.findById(req.params.id)
+      .select('students joinRequests')
+      .populate('students', 'username email avatar createdAt');
+    if (!classroom) return res.status(404).json({ error: 'Class not found' });
 
-    if (name && name.trim() && name.trim() !== cls.name) {
-      const dup = await Classroom.findOne({
-        name: name.trim(),
-        createdBy: cls.createdBy,
-        _id: { $ne: cls._id }
-      });
-      if (dup) return res.status(400).json({ error: 'Tên lớp đã tồn tại' });
-      cls.name = name.trim();
+    // map joinedAt từ joinRequests.approvedAt (nếu có), fallback request.createdAt, cuối cùng là createdAt user
+    const joinedMap = {};
+    (classroom.joinRequests || []).forEach(r => {
+      if (r.status === 'approved' && r.student) {
+        joinedMap[String(r.student)] = r.approvedAt || r.createdAt || null;
+      }
+    });
+
+    // dựng danh sách
+    let list = (classroom.students || []).map(s => ({
+      _id: s._id,
+      username: s.username,
+      email: s.email,
+      avatar: s.avatar || null,
+      joinedAt: joinedMap[String(s._id)] || s.createdAt || null,
+    }));
+
+    // filter
+    const qq = (q || '').trim().toLowerCase();
+    if (qq) {
+      list = list.filter(
+        it =>
+          (it.username || '').toLowerCase().includes(qq) ||
+          (it.email || '').toLowerCase().includes(qq)
+      );
     }
-    if (typeof description !== 'undefined') cls.description = description;
 
-    await cls.save();
+    // sort
+    const dir = order === 'asc' ? 1 : -1;
+    list.sort((a, b) => {
+      if (sort === 'username') {
+        return (a.username || '').localeCompare(b.username || '') * dir;
+      }
+      // joinedAt default
+      const ta = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
+      const tb = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
+      return (ta - tb) * dir;
+    });
 
-    const populated = await Classroom.findById(cls._id)
-      .select('name description students createdBy createdAt flashcards joinRequests')
-      .populate({ path: 'createdBy', select: 'username avatar' })
-      .populate('students', 'username email')
-      .populate('flashcards')
-      .populate({ path: 'joinRequests.student', select: 'username avatar' });
+    // pagination
+    const p = Math.max(parseInt(page, 10) || 1, 1);
+    const lim = Math.max(parseInt(limit, 10) || 10, 1);
+    const total = list.length;
+    const pages = Math.max(Math.ceil(total / lim), 1);
+    const start = (p - 1) * lim;
+    const items = list.slice(start, start + lim);
 
-    res.json(populated);
-  } catch (err) {
-    console.error('Lỗi cập nhật lớp:', err);
-    res.status(500).json({ error: 'Không thể cập nhật lớp' });
+    res.json({ students: items, total, page: p, pages, limit: lim });
+  } catch (e) {
+    console.error('Members list error:', e);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// ===== DELETE lớp =====
-router.delete('/:id', async (req, res) => {
+// DELETE /api/classrooms/:id/members/:studentId  { requesterId }
+router.delete('/:id/members/:studentId', async (req, res) => {
   try {
-    const deleted = await Classroom.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'Không tìm thấy lớp' });
+    const { requesterId } = req.body || {};
+    const classroom = await Classroom.findById(req.params.id).select('createdBy students joinRequests');
+    if (!classroom) return res.status(404).json({ error: 'Class not found' });
+
+    // chỉ owner mới xoá
+    if (!requesterId || String(classroom.createdBy) !== String(requesterId)) {
+      return res.status(403).json({ error: 'Only class owner can remove members' });
+    }
+
+    // remove from students array
+    const before = classroom.students.length;
+    classroom.students = classroom.students.filter(s => String(s) !== String(req.params.studentId));
+    if (classroom.students.length === before) {
+      return res.status(404).json({ error: 'Student not in class' });
+    }
+    await classroom.save();
+
     res.json({ ok: true });
-  } catch (err) {
-    console.error('Lỗi xoá lớp:', err);
-    res.status(500).json({ error: 'Không thể xoá lớp' });
+  } catch (e) {
+    console.error('Remove member error:', e);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

@@ -8,8 +8,24 @@ import UserMenu from '../components/UserMenu';
 import EditClassButton from '../components/EditClassButton';
 import DeleteClassButton from '../components/DeleteClassButton';
 import ShareClassButton from '../components/ShareClassButton';
+import fallbackAvatar from '../assets/icon/20250730_2254_image.png'; // 🔹 fallback giống UserMenu
 
 const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
+
+/** 🔹 Chuẩn hoá URL avatar (đồng bộ với UserMenu)
+ * - Thay "\" -> "/"
+ * - Hỗ trợ http(s)/blob/data
+ * - Hỗ trợ đường dẫn /uploads/... và /assets|/static/...
+ * - Mặc định prefix bằng API
+ */
+const toAbsUrl = (src) => {
+  if (!src) return fallbackAvatar;
+  let s = String(src).replace(/\\/g, '/').trim();
+  if (/^(https?:|blob:|data:)/i.test(s)) return s;
+  if (/^\/?uploads\//i.test(s)) return `${API}/${s.replace(/^\/+/, '')}`;
+  if (/^\/(static|assets)\//i.test(s)) return s;
+  return `${API}/${s.replace(/^\/+/, '')}`;
+};
 
 export default function ClassroomDetail() {
   const { id } = useParams();
@@ -23,6 +39,7 @@ export default function ClassroomDetail() {
   const [pending, setPending] = useState(false);
   const [bell, setBell] = useState(0);
 
+  // Assignments
   const [assignments, setAssignments] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [mySets, setMySets] = useState([]);
@@ -31,9 +48,17 @@ export default function ClassroomDetail() {
   // Results
   const [resLoading, setResLoading] = useState(false);
   const [results, setResults] = useState([]);
-  const [resAssignments, setResAssignments] = useState([]);
-  const [filterA, setFilterA] = useState('all'); // assignment filter
-  const [filterS, setFilterS] = useState('all'); // 🔹 student filter (teacher only)
+  const [resAssignments, setResAssignments] = useState([]); // ✅
+  const [filterA, setFilterA] = useState('all');
+  const [filterS, setFilterS] = useState('all');
+
+  // Members (UI tối giản)
+  const [mLoading, setMLoading] = useState(false);
+  const [mItems, setMItems] = useState([]);
+  const [mTotal, setMTotal] = useState(0);
+  const [mPage, setMPage] = useState(1);
+  const [mPages, setMPages] = useState(1);
+  const MEMBERS_PER_PAGE = 10;
 
   const userIdLS = localStorage.getItem('userId');
 
@@ -78,6 +103,25 @@ export default function ClassroomDetail() {
     }
   }, [id, userIdLS]);
 
+  // Members API (joinedAt desc, 10/page)
+  const fetchMembers = useCallback(async () => {
+    try {
+      setMLoading(true);
+      const r = await axios.get(`${API}/api/classrooms/${id}/members`, {
+        params: { page: mPage, limit: MEMBERS_PER_PAGE },
+      });
+      setMItems(r.data?.students || []);
+      setMTotal(r.data?.total || 0);
+      setMPages(r.data?.pages || 1);
+    } catch {
+      setMItems([]);
+      setMTotal(0);
+      setMPages(1);
+    } finally {
+      setMLoading(false);
+    }
+  }, [id, mPage]);
+
   // ---- Initial load ----
   useEffect(() => {
     let cancelled = false;
@@ -94,10 +138,10 @@ export default function ClassroomDetail() {
     return () => { cancelled = true; };
   }, [id, userIdLS, fetchUser, fetchClass, fetchAssignments]);
 
-  // Khi chuyển tab Results thì lấy dữ liệu
-  useEffect(() => {
-    if (activeTab === 'results') fetchResults();
-  }, [activeTab, fetchResults]);
+  // Load theo tab
+  useEffect(() => { if (activeTab === 'results') fetchResults(); }, [activeTab, fetchResults]);
+  useEffect(() => { if (activeTab === 'members') fetchMembers(); }, [activeTab, fetchMembers]);
+  useEffect(() => { if (activeTab === 'members') fetchMembers(); }, [mPage, activeTab, fetchMembers]);
 
   // ---- mark pending for student ----
   useEffect(() => {
@@ -111,8 +155,8 @@ export default function ClassroomDetail() {
   // ---- bell badge for teacher ----
   useEffect(() => {
     if (!userData || !classData) return;
-    const isTeacher = String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
-    if (!isTeacher) return;
+    const isT = String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
+    if (!isT) return;
     axios
       .get(`${API}/api/classrooms/pending-count/${userData._id}`)
       .then((r) => setBell(r.data?.count || 0))
@@ -181,16 +225,26 @@ export default function ClassroomDetail() {
   // ==== Results derived: apply both filters ====
   const filteredResults = useMemo(() => {
     let arr = results;
-    if (filterA !== 'all') {
-      arr = arr.filter((r) => String(r.assignmentId) === String(filterA));
-    }
-    if (isTeacher && filterS !== 'all') {
-      arr = arr.filter((r) => String(r.studentId) === String(filterS));
-    }
+    if (filterA !== 'all') arr = arr.filter((r) => String(r.assignmentId) === String(filterA));
+    if (isTeacher && filterS !== 'all') arr = arr.filter((r) => String(r.studentId) === String(filterS));
     return arr;
   }, [results, filterA, filterS, isTeacher]);
 
   if (loading || !classData || !userData) return <div className="p-10">Loading...</div>;
+
+  const removeStudent = async (studentId, username) => {
+    if (!window.confirm(`Remove "${username}" from this class?`)) return;
+    try {
+      await axios.delete(`${API}/api/classrooms/${id}/members/${studentId}`, {
+        data: { requesterId: userData._id },
+      });
+      await Promise.all([fetchMembers(), fetchClass()]);
+    } catch (e) {
+      alert(e?.response?.data?.error || 'Failed to remove member');
+    }
+  };
+
+  const formatDate = (d) => (d ? new Date(d).toLocaleString() : '-');
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -212,7 +266,7 @@ export default function ClassroomDetail() {
         </div>
 
         {/* Header */}
-        <div className="bg-white shadow rounded-lg p-6 mb-4 flex items-center justify-between">
+        <div className="bg-white shadow rounded-xl p-6 mb-6 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-green-700 mb-1">{classData.name}</h2>
             <p className="text-sm text-gray-600">Teacher: {classData.createdBy.username}</p>
@@ -254,7 +308,7 @@ export default function ClassroomDetail() {
         {/* Tabs */}
         {canSeeTabs ? (
           <>
-            <div className="mb-6 border-b border-gray-300">
+            <div className="mb-6 border-b border-gray-200">
               <nav className="flex gap-6">
                 <button
                   onClick={() => setActiveTab('assignments')}
@@ -284,6 +338,7 @@ export default function ClassroomDetail() {
             </div>
 
             <div>
+              {/* ===== Assignments tab ===== */}
               {activeTab === 'assignments' && (
                 <div className="bg-white rounded-xl p-6 shadow">
                   {isTeacher && (
@@ -347,22 +402,110 @@ export default function ClassroomDetail() {
                 </div>
               )}
 
+              {/* ===== Members tab ===== */}
               {activeTab === 'members' && (
-                <ul className="list-disc list-inside space-y-1 text-gray-700">
-                  {classData.students.map((s) => (
-                    <li key={s._id || s}>{s.username || s}</li>
-                  ))}
-                </ul>
+                <div className="bg-white rounded-xl p-6 shadow">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold">Students</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Total <span className="font-medium">{mTotal}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={fetchMembers}
+                      className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+
+                  {mLoading ? (
+                    <div className="text-gray-500">Loading members…</div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-50 text-gray-700">
+                              <th className="text-left p-2">Student</th>
+                              <th className="text-left p-2">Email</th>
+                              <th className="text-left p-2">Joined</th>
+                              {isTeacher && <th className="text-left p-2">Actions</th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {mItems.map((s) => (
+                              <tr key={s._id} className="border-t">
+                                <td className="p-2">
+                                  <div className="flex items-center gap-3">
+                                    <img
+                                      src={toAbsUrl(s.avatar)}   // 🔹 dùng chuẩn hoá giống UserMenu
+                                      alt="avatar"
+                                      className="w-9 h-9 rounded-full object-cover ring-1 ring-gray-200 bg-white"
+                                      onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
+                                    />
+                                    <span className="font-medium text-gray-800">{s.username}</span>
+                                  </div>
+                                </td>
+                                <td className="p-2 text-gray-600">{s.email || '-'}</td>
+                                <td className="p-2 text-gray-600">{formatDate(s.joinedAt)}</td>
+                                {isTeacher && (
+                                  <td className="p-2">
+                                    <button
+                                      onClick={() => removeStudent(s._id, s.username)}
+                                      className="px-3 py-1.5 rounded-lg border text-red-600 border-red-200 hover:bg-red-50"
+                                    >
+                                      Remove
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                            {mItems.length === 0 && (
+                              <tr>
+                                <td className="p-6 text-gray-500" colSpan={isTeacher ? 4 : 3}>
+                                  No students found.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination */}
+                      <div className="flex items-center justify-between mt-4">
+                        <div className="text-sm text-gray-500">
+                          Page {mPage} / {mPages}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { if (mPage > 1) setMPage(mPage - 1); }}
+                            disabled={mPage <= 1}
+                            className="px-3 py-1.5 border rounded-lg disabled:opacity-50"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            onClick={() => { if (mPage < mPages) setMPage(mPage + 1); }}
+                            disabled={mPage >= mPages}
+                            className="px-3 py-1.5 border rounded-lg disabled:opacity-50"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
 
+              {/* ===== Results tab ===== */}
               {activeTab === 'results' && (
                 <div className="bg-white rounded-xl p-6 shadow">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold">Results</h3>
-
-                    {/* 🔹 Filters row */}
                     <div className="flex items-center gap-3">
-                      {/* Student filter: only for teacher */}
                       {isTeacher && (
                         <select
                           className="border rounded px-3 py-2 text-sm"
@@ -373,16 +516,10 @@ export default function ClassroomDetail() {
                           {(classData.students || []).map((stu) => {
                             const sid = stu._id || stu;
                             const name = stu.username || String(stu);
-                            return (
-                              <option key={sid} value={sid}>
-                                {name}
-                              </option>
-                            );
+                            return <option key={sid} value={sid}>{name}</option>;
                           })}
                         </select>
                       )}
-
-                      {/* Assignment filter */}
                       <select
                         className="border rounded px-3 py-2 text-sm"
                         value={filterA}
@@ -390,9 +527,7 @@ export default function ClassroomDetail() {
                       >
                         <option value="all">All assignments</option>
                         {resAssignments.map((a) => (
-                          <option key={a._id} value={a._id}>
-                            {a.title} ({a.mode})
-                          </option>
+                          <option key={a._id} value={a._id}>{a.title} ({a.mode})</option>
                         ))}
                       </select>
                     </div>
@@ -425,19 +560,11 @@ export default function ClassroomDetail() {
                               <td className="p-2">{r.score == null ? '-' : r.score}</td>
                               <td className="p-2">{r.total}</td>
                               <td className="p-2">
-                                {r.status === 'submitted' ? (
-                                  <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">
-                                    Submitted
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs">
-                                    Not submitted
-                                  </span>
-                                )}
+                                {r.status === 'submitted'
+                                  ? <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">Submitted</span>
+                                  : <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs">Not submitted</span>}
                               </td>
-                              <td className="p-2">
-                                {r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '-'}
-                              </td>
+                              <td className="p-2">{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '-'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -449,18 +576,14 @@ export default function ClassroomDetail() {
             </div>
           </>
         ) : (
-          <div className="text-gray-500 italic">
-            You need to join the class to see assignments and members.
-          </div>
+          <div className="text-gray-500 italic">You need to join the class to see assignments and members.</div>
         )}
 
         {/* Create modal */}
         {showCreate && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow relative">
-              <button className="absolute top-3 right-3 text-gray-500" onClick={() => setShowCreate(false)}>
-                ✕
-              </button>
+              <button className="absolute top-3 right-3 text-gray-500" onClick={() => setShowCreate(false)}>✕</button>
               <h3 className="text-lg font-semibold mb-4">New Assignment</h3>
 
               <label className="block text-sm font-medium mb-1">Flashcard set</label>
@@ -471,37 +594,18 @@ export default function ClassroomDetail() {
               >
                 <option value="">-- Choose a set --</option>
                 {mySets.map((s) => (
-                  <option key={s._id} value={s._id}>
-                    {s.title} ({s.cards?.length || 0} terms)
-                  </option>
+                  <option key={s._id} value={s._id}>{s.title} ({s.cards?.length || 0} terms)</option>
                 ))}
               </select>
-              {mySets.length === 0 && (
-                <div className="text-xs text-gray-500 mb-3">
-                  You have no sets yet. <Link to="/flashcards" className="text-blue-600 underline">Create one</Link>.
-                </div>
-              )}
 
               <label className="block text-sm font-medium mb-1">Mode</label>
               <div className="flex gap-4 mb-3">
                 <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="mode"
-                    value="test"
-                    checked={createForm.mode === 'test'}
-                    onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}
-                  />
+                  <input type="radio" name="mode" value="test" checked={createForm.mode === 'test'} onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}/>
                   <span>Test (multiple choice)</span>
                 </label>
                 <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="mode"
-                    value="learn"
-                    checked={createForm.mode === 'learn'}
-                    onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}
-                  />
+                  <input type="radio" name="mode" value="learn" checked={createForm.mode === 'learn'} onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}/>
                   <span>Learn (typed answer)</span>
                 </label>
               </div>
@@ -515,19 +619,10 @@ export default function ClassroomDetail() {
               />
 
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShowCreate(false)} className="px-4 py-2">
-                  Cancel
-                </button>
-                <button
-                  onClick={createAssignment}
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
-                >
-                  Create
-                </button>
+                <button onClick={() => setShowCreate(false)} className="px-4 py-2">Cancel</button>
+                <button onClick={createAssignment} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">Create</button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Each question has 30s. Total time = 30s × number of questions.
-              </p>
+              <p className="text-xs text-gray-500 mt-2">Each question has 30s. Total time = 30s × number of questions.</p>
             </div>
           </div>
         )}
