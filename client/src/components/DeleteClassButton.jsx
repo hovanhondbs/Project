@@ -11,12 +11,19 @@ function DeleteClassButton({ classId, onDeleteSuccess }) {
   const handleDelete = async () => {
     try {
       setDeleting(true);
-      await axios.delete(`${API}/api/classrooms/${classId}`);
+      const requesterId = localStorage.getItem('userId');
+      const token = localStorage.getItem('token');
+
+      await axios.delete(`${API}/api/classrooms/${classId}`, {
+        data: { requesterId },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
       setShowConfirm(false);
       if (onDeleteSuccess) onDeleteSuccess();
     } catch (err) {
       console.error('Delete failed:', err);
-      alert('Failed to delete class');
+      alert(err?.response?.data?.error || 'Failed to delete class');
     } finally {
       setDeleting(false);
     }
@@ -46,7 +53,7 @@ function DeleteClassButton({ classId, onDeleteSuccess }) {
               </button>
               <button
                 onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
                 disabled={deleting}
               >
                 {deleting ? 'Deleting...' : 'OK'}

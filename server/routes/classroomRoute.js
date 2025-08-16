@@ -17,6 +17,22 @@ const emitTo = (req, userId, event, payload) => {
   } catch (_) {}
 };
 
+// --- helper kiểm quyền chủ lớp ---
+async function assertIsOwner(classId, requesterId) {
+  const cls = await Classroom.findById(classId).select('createdBy');
+  if (!cls) {
+    const err = new Error('Class not found');
+    err.status = 404;
+    throw err;
+  }
+  if (!requesterId || String(cls.createdBy) !== String(requesterId)) {
+    const err = new Error('Only class owner can perform this action');
+    err.status = 403;
+    throw err;
+  }
+  return cls;
+}
+
 /* =========================
    CREATE CLASS
    ========================= */
@@ -54,9 +70,8 @@ router.get('/by-user/:userId', async (req, res) => {
 
 router.get('/joined/:userId', async (req, res) => {
   try {
-    // ⚠️ FIX: populate cả avatar của giáo viên
     const classes = await Classroom.find({ students: req.params.userId })
-      .populate('createdBy', 'username avatar')
+      .populate('createdBy', 'username avatar') // FIX: cần avatar GV
       .sort({ createdAt: -1 });
     res.json(classes);
   } catch (e) {
@@ -85,8 +100,55 @@ router.get('/:id', async (req, res) => {
 });
 
 /* =========================
+   UPDATE CLASS (owner only)
+   PUT /api/classrooms/:id
+   Body: { name, description, requesterId }
+   ========================= */
+router.put('/:id', async (req, res) => {
+  try {
+    const { name, description, requesterId } = req.body;
+    await assertIsOwner(req.params.id, requesterId || req.user?._id);
+
+    const update = {};
+    if (typeof name === 'string' && name.trim()) update.name = name.trim();
+    if (typeof description === 'string') update.description = description;
+
+    await Classroom.updateOne({ _id: req.params.id }, { $set: update });
+    const populated = await Classroom.findById(req.params.id)
+      .populate('createdBy', 'username avatar')
+      .populate('students', 'username email avatar');
+
+    res.json(populated);
+  } catch (err) {
+    console.error('Update class error:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Server error' });
+  }
+});
+
+/* =========================
+   DELETE CLASS (owner only)
+   DELETE /api/classrooms/:id
+   Body/Query/Header: requesterId
+   ========================= */
+router.delete('/:id', async (req, res) => {
+  try {
+    const requesterId =
+      req.body?.requesterId || req.query?.requesterId || req.headers['x-requester-id'] || req.user?._id;
+
+    await assertIsOwner(req.params.id, requesterId);
+    await Classroom.deleteOne({ _id: req.params.id });
+
+    // (tuỳ chọn) Nếu bạn có model Assignment, có thể xoá kèm ở đây
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete class error:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Server error' });
+  }
+});
+
+/* =========================
    STUDENT REQUEST JOIN (PENDING)
-   Emits: join:pending -> teacher
    ========================= */
 router.post('/:id/request-join', async (req, res) => {
   try {
@@ -124,7 +186,6 @@ router.post('/:id/request-join', async (req, res) => {
 
 /* =========================
    TEACHER APPROVE / REJECT
-   Emits: notif:new -> student
    ========================= */
 router.post('/:id/approve', async (req, res) => {
   try {
@@ -159,7 +220,7 @@ router.post('/:id/approve', async (req, res) => {
       meta: { classId: classroom._id, approve: !!approve },
     });
 
-    // 🔴 emit realtime tới học sinh (UserMenu đang nghe 'notif:new')
+    // 🔴 emit realtime tới học sinh
     emitTo(req, studentId, 'notif:new', { _id: notif._id });
 
     res.json({ ok: true });
@@ -170,7 +231,7 @@ router.post('/:id/approve', async (req, res) => {
 });
 
 /* =========================
-   PENDING COUNT & LIST (CHO CHUÔNG GIÁO VIÊN)
+   PENDING COUNT & LIST (cho chuông giáo viên)
    ========================= */
 router.get('/pending-count/:teacherId', async (req, res) => {
   try {

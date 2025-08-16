@@ -62,7 +62,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/search', searchRoute);
 
-app.use('/api/classrooms', classroomRoute);
+app.use('/api/classrooms', classroomRoute);x
 app.use('/api/flashcards', flashcardRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/notifications', notificationRoutes);
