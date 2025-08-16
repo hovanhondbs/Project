@@ -6,11 +6,15 @@ const Submission = require('../models/AssignmentSubmission');
 const Classroom = require('../models/Classroom');
 const FlashcardSet = require('../models/FlashcardSet');
 let Notification;
-try { Notification = require('../models/Notification'); } catch (_) {}
+try {
+  Notification = require('../models/Notification');
+} catch (_) {}
 
 const router = express.Router();
 
-// Tạo assignment (Teacher)
+/* -------------------------------------------
+ * CREATE assignment  (Teacher / class owner)
+ * ------------------------------------------- */
 router.post('/', async (req, res) => {
   try {
     const { classId, setId, mode, deadline, createdBy } = req.body;
@@ -20,7 +24,9 @@ router.post('/', async (req, res) => {
 
     const classroom = await Classroom.findById(classId).populate('students createdBy', 'username avatar');
     if (!classroom) return res.status(404).json({ message: 'Classroom not found' });
-    if (String(classroom.createdBy._id) !== String(createdBy)) {
+
+    // Only the class owner (teacher) can create assignments
+    if (String(classroom.createdBy?._id || classroom.createdBy) !== String(createdBy)) {
       return res.status(403).json({ message: 'Only class owner can create assignments' });
     }
 
@@ -43,14 +49,16 @@ router.post('/', async (req, res) => {
 
     // Notify students
     if (classroom.students?.length && Notification) {
-      const notifs = classroom.students.map((stu) => ({
+      const docs = classroom.students.map((stu) => ({
         userId: stu,
         title: 'New assignment',
         message: `Your class has a new ${a.mode.toUpperCase()} assignment: ${set.title}`,
         link: `/classes/${classId}`,
       }));
-      await Notification.insertMany(notifs).catch(() => {});
+      await Notification.insertMany(docs).catch(() => {});
     }
+
+    // Socket notify
     try {
       const io = req.app.get('io');
       if (io && classroom.students) {
@@ -65,7 +73,9 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Danh sách assignment theo lớp (+ trạng thái của student)
+/* -------------------------------------------
+ * LIST assignments of a class (+ student state)
+ * ------------------------------------------- */
 router.get('/class/:classId', async (req, res) => {
   try {
     const { classId } = req.params;
@@ -106,7 +116,9 @@ router.get('/class/:classId', async (req, res) => {
   }
 });
 
-// Lấy chi tiết assignment + bộ thẻ
+/* -------------------------------------------
+ * GET assignment detail (+ set)
+ * ------------------------------------------- */
 router.get('/:id', async (req, res) => {
   try {
     const a = await Assignment.findById(req.params.id)
@@ -130,7 +142,9 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Kiểm tra đã nộp chưa
+/* -------------------------------------------
+ * CHECK submission state for a student
+ * ------------------------------------------- */
 router.get('/:id/submission/:studentId', async (req, res) => {
   try {
     const sub = await Submission.findOne({
@@ -144,7 +158,9 @@ router.get('/:id/submission/:studentId', async (req, res) => {
   }
 });
 
-// Nộp bài (chỉ 1 lần, trong hạn)
+/* -------------------------------------------
+ * SUBMIT assignment (only once, before deadline)
+ * ------------------------------------------- */
 router.post('/:id/submit', async (req, res) => {
   try {
     const { studentId, score, total, details } = req.body;
@@ -191,12 +207,9 @@ router.post('/:id/submit', async (req, res) => {
   }
 });
 
-/* =========================
-   NEW: Kết quả (Results)
-   ========================= */
-// GET /api/assignments/class/:classId/results?viewerId=...
-// - Nếu viewer là giáo viên của lớp: trả điểm TẤT CẢ học sinh (kể cả chưa nộp)
-// - Nếu viewer là học sinh: chỉ trả điểm của chính học sinh đó
+/* -------------------------------------------
+ * RESULTS (teacher sees all, student sees own)
+ * ------------------------------------------- */
 router.get('/class/:classId/results', async (req, res) => {
   try {
     const { classId } = req.params;
@@ -234,7 +247,7 @@ router.get('/class/:classId/results', async (req, res) => {
 
     const results = [];
     if (isTeacher) {
-      // Tất cả học sinh x tất cả bài
+      // All students x all assignments
       for (const a of assignments) {
         for (const stu of classroom.students || []) {
           const s = subMap[String(a._id)]?.[String(stu._id)];
@@ -253,7 +266,7 @@ router.get('/class/:classId/results', async (req, res) => {
         }
       }
     } else {
-      // Chỉ kết quả của chính học sinh
+      // Only this student's results
       const me = viewerId;
       for (const a of assignments) {
         const s = subMap[String(a._id)]?.[String(me)];
@@ -281,6 +294,39 @@ router.get('/class/:classId/results', async (req, res) => {
     });
   } catch (err) {
     console.error('Results error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/* -------------------------------------------
+ * DELETE assignment  (Teacher / class owner)
+ * - Only class owner (createdBy of classroom) OR
+ *   creator of the assignment can delete
+ * - Also deletes all submissions of that assignment
+ * ------------------------------------------- */
+router.delete('/:id', async (req, res) => {
+  try {
+    const { requesterId } = req.body || {};
+    if (!requesterId) return res.status(400).json({ message: 'Missing requesterId' });
+
+    const assignment = await Assignment.findById(req.params.id);
+    if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
+
+    const classroom = await Classroom.findById(assignment.classId).select('createdBy');
+    if (!classroom) return res.status(404).json({ message: 'Classroom not found' });
+
+    const isOwner = String(classroom.createdBy) === String(requesterId);
+    const isCreator = String(assignment.createdBy) === String(requesterId);
+    if (!isOwner && !isCreator) {
+      return res.status(403).json({ message: 'Not allowed to delete this assignment' });
+    }
+
+    await Submission.deleteMany({ assignmentId: assignment._id });
+    await Assignment.deleteOne({ _id: assignment._id });
+
+    return res.json({ deleted: true });
+  } catch (err) {
+    console.error('Delete assignment error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });

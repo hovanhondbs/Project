@@ -4,25 +4,31 @@ const mongoose = require('mongoose');
 const FlashcardSet = require('../models/FlashcardSet');
 const Classroom = require('../models/Classroom');
 
-// GET /api/search?query=...
 router.get('/', async (req, res) => {
-  const query = req.query.query?.trim();
+  const query = (req.query.query || '').trim();
   if (!query) return res.json({ flashcards: [], classes: [] });
 
   try {
     const regex = new RegExp(query, 'i');
-    const conditions = [{ name: { $regex: regex } }];
 
-    if (mongoose.Types.ObjectId.isValid(query)) {
-      conditions.push({ _id: query });
-    }
-
-    // ⚠️ Quan trọng: populate kèm 'avatar'
-    const flashcards = await FlashcardSet.find({ title: { $regex: regex } })
+    // Ẩn set assignmentOnly + hidden khỏi Search
+    const flashcards = await FlashcardSet.find({
+      assignmentOnly: { $ne: true },
+      hidden: { $ne: true },
+      $or: [
+        { title: regex },
+        { description: regex },
+        { 'cards.term': regex },
+        { 'cards.definition': regex },
+      ],
+    })
       .select('title description cards userId createdAt')
       .populate({ path: 'userId', select: 'username avatar' });
 
-    const classes = await Classroom.find({ $or: conditions })
+    const classConds = [{ name: { $regex: regex } }, { description: { $regex: regex } }];
+    if (mongoose.Types.ObjectId.isValid(query)) classConds.push({ _id: query });
+
+    const classes = await Classroom.find({ $or: classConds })
       .select('name description students createdBy createdAt')
       .populate({ path: 'createdBy', select: 'username avatar' })
       .populate('students');
@@ -30,7 +36,7 @@ router.get('/', async (req, res) => {
     res.json({ flashcards, classes });
   } catch (err) {
     console.error('Search error:', err);
-    res.status(500).json({ error: 'Lỗi tìm kiếm', details: err.message });
+    res.status(500).json({ error: 'Search failed', details: err.message });
   }
 });
 

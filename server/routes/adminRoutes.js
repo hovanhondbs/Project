@@ -9,10 +9,9 @@ const Classroom = require('../models/Classroom');
 const FlashcardSet = require('../models/FlashcardSet');
 const Report = require('../models/Report');
 
-// TẤT CẢ endpoints admin đều cần admin
 router.use(requireAdmin);
 
-// ========== OVERVIEW (giữ nguyên) ==========
+/** ----------- OVERVIEW KPIs ----------- */
 router.get('/stats/overview', async (_req, res) => {
   try {
     const [totalUsers, totalTeachers, totalClasses, totalSets, openReports] = await Promise.all([
@@ -28,102 +27,117 @@ router.get('/stats/overview', async (_req, res) => {
   }
 });
 
-// ========== TIME-SERIES (MỚI) ==========
+/** ----------- TIME-SERIES: New users / Cards created / DAU ----------- */
 // GET /api/admin/stats/timeseries?days=30
-// Trả về mảng [{date:'YYYY-MM-DD', newUsers, submissions, dau}]
 router.get('/stats/timeseries', async (req, res) => {
   try {
     const days = Math.max(1, Math.min(120, parseInt(req.query.days || '30', 10)));
-    const end = new Date(); // now
+    const end = new Date();
     const start = new Date(end);
     start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - (days - 1)); // ví dụ 30 ngày -> lùi 29
+    start.setDate(start.getDate() - (days - 1));
 
-    // Helper: build all dates
     const allDays = [];
     for (let i = 0; i < days; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
-      const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
-      allDays.push(key);
+      allDays.push(d.toISOString().slice(0, 10));
     }
 
-    // 1) New users per day
     const usersAgg = await User.aggregate([
       { $match: { createdAt: { $gte: start } } },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-          count: { $sum: 1 },
-        },
-      },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
     ]);
 
-    // 2) Submissions per day (đọc trực tiếp collection để không cần Model)
-    const subsAgg = await mongoose.connection
-      .collection('assignment_submissions')
-      .aggregate([
-        {
-          $addFields: {
-            _submittedAt: { $ifNull: ['$submittedAt', '$createdAt'] },
-          },
+    const cardsAgg = await FlashcardSet.aggregate([
+      { $match: { createdAt: { $gte: start } } },
+      {
+        $project: {
+          day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          cardCount: { $size: { $ifNull: ['$cards', []] } },
         },
-        { $match: { _submittedAt: { $gte: start } } },
-        {
-          $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$_submittedAt' } },
-            count: { $sum: 1 },
-            // DAU một phần từ submissions (distinct user/day)
-            users: { $addToSet: '$userId' },
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            count: 1,
-            dauPart: { $size: '$users' },
-          },
-        },
-      ])
-      .toArray();
+      },
+      { $group: { _id: '$day', cards: { $sum: '$cardCount' } } },
+    ]);
 
-    // 3) DAU từ activity logs (nếu có)
-    let actAgg = [];
+    let dauFromSubs = [];
     try {
-      actAgg = await mongoose.connection
-        .collection('activitylogs')
-        .aggregate([
-          { $match: { createdAt: { $gte: start } } },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-              users: { $addToSet: '$userId' },
-            },
-          },
-          { $project: { _id: 1, dauPart: { $size: '$users' } } },
-        ])
-        .toArray();
-    } catch {
-      actAgg = [];
-    }
+      dauFromSubs = await mongoose.connection.collection('assignment_submissions').aggregate([
+        { $addFields: { _submittedAt: { $ifNull: ['$submittedAt', '$createdAt'] } } },
+        { $match: { _submittedAt: { $gte: start } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$_submittedAt' } }, users: { $addToSet: '$userId' } } },
+        { $project: { _id: 1, dauPart: { $size: '$users' } } },
+      ]).toArray();
+    } catch { dauFromSubs = []; }
 
-    // Map -> merge
-    const mapUsers = new Map(usersAgg.map((x) => [x._id, x.count]));
-    const mapSubs = new Map(subsAgg.map((x) => [x._id, { submissions: x.count, dauPart: x.dauPart }]));
-    const mapActs = new Map(actAgg.map((x) => [x._id, x.dauPart]));
+    let dauFromActs = [];
+    try {
+      dauFromActs = await mongoose.connection.collection('activitylogs').aggregate([
+        { $match: { createdAt: { $gte: start } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, users: { $addToSet: '$userId' } } },
+        { $project: { _id: 1, dauPart: { $size: '$users' } } },
+      ]).toArray();
+    } catch { dauFromActs = []; }
 
-    const out = allDays.map((key) => {
-      const newUsers = mapUsers.get(key) || 0;
-      const subInfo = mapSubs.get(key) || { submissions: 0, dauPart: 0 };
-      const dauAct = mapActs.get(key) || 0;
-      const dau = subInfo.dauPart + dauAct; // union xấp xỉ (chấp nhận double count nhỏ)
-      return { date: key, newUsers, submissions: subInfo.submissions, dau };
-    });
+    const mapUsers = new Map(usersAgg.map(x => [x._id, x.count]));
+    const mapCards = new Map(cardsAgg.map(x => [x._id, x.cards]));
+    const mapDauSub = new Map(dauFromSubs.map(x => [x._id, x.dauPart]));
+    const mapDauAct = new Map(dauFromActs.map(x => [x._id, x.dauPart]));
 
-    res.json({ start: start.toISOString(), end: end.toISOString(), days, series: out });
+    const series = allDays.map(day => ({
+      date: day,
+      newUsers: mapUsers.get(day) || 0,
+      cards: mapCards.get(day) || 0,
+      dau: (mapDauSub.get(day) || 0) + (mapDauAct.get(day) || 0),
+    }));
+
+    res.json({ start: start.toISOString(), end: end.toISOString(), days, series });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'timeseries_error' });
+  }
+});
+
+/** ----------- USERS LIST (quan trọng) ----------- */
+// GET /api/admin/users?q=&role=&status=&page=1&limit=10
+router.get('/users', async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit || '10', 10)));
+
+    const q = (req.query.q || '').trim();
+    const role = (req.query.role || '').trim();
+    const status = (req.query.status || '').trim();
+
+    const filter = {};
+    if (q) {
+      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ username: rx }, { email: rx }];
+    }
+    if (role) filter.role = role;
+    if (status) filter.status = status;
+
+    const [items, total] = await Promise.all([
+      User.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      User.countDocuments(filter),
+    ]);
+
+    res.json({
+      items: items.map(u => ({
+        _id: u._id,
+        username: u.username,
+        email: u.email,
+        role: u.role,
+        status: u.status,
+        createdAt: u.createdAt,
+      })),
+      page,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      total,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'users_list_error' });
   }
 });
 

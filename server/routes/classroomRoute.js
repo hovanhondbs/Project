@@ -8,7 +8,7 @@ const Notification = require('../models/Notification');
 require('../models/User');
 require('../models/FlashcardSet');
 
-// Helper
+// Helpers
 const toOid = (v) => (mongoose.Types.ObjectId.isValid(v) ? new mongoose.Types.ObjectId(v) : v);
 const emitTo = (req, userId, event, payload) => {
   try {
@@ -54,8 +54,9 @@ router.get('/by-user/:userId', async (req, res) => {
 
 router.get('/joined/:userId', async (req, res) => {
   try {
+    // ⚠️ FIX: populate cả avatar của giáo viên
     const classes = await Classroom.find({ students: req.params.userId })
-      .populate('createdBy', 'username')
+      .populate('createdBy', 'username avatar')
       .sort({ createdAt: -1 });
     res.json(classes);
   } catch (e) {
@@ -123,7 +124,7 @@ router.post('/:id/request-join', async (req, res) => {
 
 /* =========================
    TEACHER APPROVE / REJECT
-   Emits: notif:new -> student (and keeps pending count correct for teacher)
+   Emits: notif:new -> student
    ========================= */
 router.post('/:id/approve', async (req, res) => {
   try {
@@ -160,8 +161,6 @@ router.post('/:id/approve', async (req, res) => {
 
     // 🔴 emit realtime tới học sinh (UserMenu đang nghe 'notif:new')
     emitTo(req, studentId, 'notif:new', { _id: notif._id });
-
-    // (Tuỳ chọn) có thể emit lại join:pending để GV tự refresh badge; UserMenu đã gọi /pending-count sau approve nên không bắt buộc.
 
     res.json({ ok: true });
   } catch (e) {

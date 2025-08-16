@@ -1,17 +1,23 @@
+// server/middleware/requireAdmin.js
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-module.exports = function requireAdmin(req, res, next) {
+module.exports = async function requireAdmin(req, res, next) {
   try {
-    const hdr = req.headers.authorization || '';
-    const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : null;
-    if (!token) return res.status(401).json({ message: 'Missing token' });
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded || decoded.role !== 'Admin') {
-      return res.status(403).json({ message: 'Admin only' });
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'No token' });
+
+    const payload = jwt.verify(token, process.env.JWT_SECRET || 'dev_secret');
+    const user = await User.findById(payload.id || payload._id).lean();
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    if (String(user.role).toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
     }
-    req.user = decoded;
+
+    req.user = user;
     next();
   } catch (e) {
-    return res.status(401).json({ message: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid token' });
   }
 };

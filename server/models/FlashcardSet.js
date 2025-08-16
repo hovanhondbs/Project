@@ -7,16 +7,22 @@ const cardSchema = new Schema({
   image: { type: String }
 });
 
-const flashcardSetSchema = new Schema({
-  title: { type: String, required: true },
-  description: String,
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  cards: [cardSchema],
+const flashcardSetSchema = new Schema(
+  {
+    title: { type: String, required: true },
+    description: String,
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    cards: [cardSchema],
 
-  // ✅ phục vụ moderation
-  hidden: { type: Boolean, default: false },
-  reportCount: { type: Number, default: 0 },
-}, { timestamps: true });
+    // flags cũ
+    hidden: { type: Boolean, default: false },
+    reportCount: { type: Number, default: 0 },
+
+    // ⬇️ THÊM: set dùng cho assignment -> ẩn khỏi kết quả search
+    assignmentOnly: { type: Boolean, default: false },
+  },
+  { timestamps: true }
+);
 
 flashcardSetSchema.index({ userId: 1, title: 1 }, { unique: true });
 

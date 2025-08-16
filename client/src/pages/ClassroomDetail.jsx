@@ -8,16 +8,11 @@ import UserMenu from '../components/UserMenu';
 import EditClassButton from '../components/EditClassButton';
 import DeleteClassButton from '../components/DeleteClassButton';
 import ShareClassButton from '../components/ShareClassButton';
-import fallbackAvatar from '../assets/icon/20250730_2254_image.png'; // 🔹 fallback giống UserMenu
+import fallbackAvatar from '../assets/icon/20250730_2254_image.png';
 
 const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
-/** 🔹 Chuẩn hoá URL avatar (đồng bộ với UserMenu)
- * - Thay "\" -> "/"
- * - Hỗ trợ http(s)/blob/data
- * - Hỗ trợ đường dẫn /uploads/... và /assets|/static/...
- * - Mặc định prefix bằng API
- */
+// normalize avatar url
 const toAbsUrl = (src) => {
   if (!src) return fallbackAvatar;
   let s = String(src).replace(/\\/g, '/').trim();
@@ -42,17 +37,25 @@ export default function ClassroomDetail() {
   // Assignments
   const [assignments, setAssignments] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [mySets, setMySets] = useState([]);
-  const [createForm, setCreateForm] = useState({ setId: '', mode: 'test', deadline: '' });
+
+  // embedded create-set form state (inside Create Assignment modal)
+  const [createForm, setCreateForm] = useState({ mode: 'test', deadline: '' });
+  const [newSet, setNewSet] = useState({
+    title: '',
+    description: '',
+    cards: [{ term: '', definition: '', image: null }],
+  });
+  const [formErrors, setFormErrors] = useState({});
+  const [creating, setCreating] = useState(false);
 
   // Results
   const [resLoading, setResLoading] = useState(false);
   const [results, setResults] = useState([]);
-  const [resAssignments, setResAssignments] = useState([]); // ✅
+  const [resAssignments, setResAssignments] = useState([]);
   const [filterA, setFilterA] = useState('all');
   const [filterS, setFilterS] = useState('all');
 
-  // Members (UI tối giản)
+  // Members
   const [mLoading, setMLoading] = useState(false);
   const [mItems, setMItems] = useState([]);
   const [mTotal, setMTotal] = useState(0);
@@ -103,7 +106,6 @@ export default function ClassroomDetail() {
     }
   }, [id, userIdLS]);
 
-  // Members API (joinedAt desc, 10/page)
   const fetchMembers = useCallback(async () => {
     try {
       setMLoading(true);
@@ -135,15 +137,25 @@ export default function ClassroomDetail() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id, userIdLS, fetchUser, fetchClass, fetchAssignments]);
 
-  // Load theo tab
-  useEffect(() => { if (activeTab === 'results') fetchResults(); }, [activeTab, fetchResults]);
-  useEffect(() => { if (activeTab === 'members') fetchMembers(); }, [activeTab, fetchMembers]);
-  useEffect(() => { if (activeTab === 'members') fetchMembers(); }, [mPage, activeTab, fetchMembers]);
+  // Load per tab
+  useEffect(() => {
+    if (activeTab === 'results') fetchResults();
+  }, [activeTab, fetchResults]);
 
-  // ---- mark pending for student ----
+  useEffect(() => {
+    if (activeTab === 'members') fetchMembers();
+  }, [activeTab, fetchMembers]);
+
+  useEffect(() => {
+    if (activeTab === 'members') fetchMembers();
+  }, [mPage, activeTab, fetchMembers]);
+
+  // student pending
   useEffect(() => {
     if (!classData || !userIdLS) return;
     const mine = (classData.joinRequests || []).find(
@@ -152,10 +164,11 @@ export default function ClassroomDetail() {
     setPending(!!mine);
   }, [classData, userIdLS]);
 
-  // ---- bell badge for teacher ----
+  // bell for teacher
   useEffect(() => {
     if (!userData || !classData) return;
-    const isT = String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
+    const isT =
+      String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
     if (!isT) return;
     axios
       .get(`${API}/api/classrooms/pending-count/${userData._id}`)
@@ -164,13 +177,14 @@ export default function ClassroomDetail() {
   }, [userData, classData]);
 
   const isTeacher =
-    !!userData && !!classData && String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
+    !!userData &&
+    !!classData &&
+    String(userData._id) === String(classData.createdBy?._id || classData.createdBy);
   const isStudent = userData?.role === 'User';
   const alreadyJoined =
     !!classData && classData.students.some((s) => String(s._id || s) === String(userData?._id));
   const canSeeTabs = isTeacher || alreadyJoined;
 
-  // ---- student requests to join ----
   const requestJoin = async () => {
     try {
       await axios.post(`${API}/api/classrooms/${id}/request-join`, { studentId: userData._id });
@@ -181,39 +195,97 @@ export default function ClassroomDetail() {
     }
   };
 
-  // ---- Teacher: open modal + load own sets ----
-  const openCreate = async () => {
-    try {
-      const uid = userIdLS || userData?._id;
-      if (!uid) throw new Error('No userId');
-      const r = await axios.get(`${API}/api/flashcards/user/${uid}`);
-      setMySets(Array.isArray(r.data) ? r.data : []);
-    } catch {
-      setMySets([]);
-    }
-    setCreateForm({ setId: '', mode: 'test', deadline: '' });
+  // open modal (reset create form + new set)
+  const openCreate = () => {
+    setCreateForm({ mode: 'test', deadline: '' });
+    setNewSet({ title: '', description: '', cards: [{ term: '', definition: '', image: null }] });
+    setFormErrors({});
     setShowCreate(true);
   };
 
+  // ====== Create assignment flow (create set -> create assignment) ======
+  const validateSet = () => {
+    const errs = {};
+    if (!newSet.title.trim()) errs.title = true;
+    if (!newSet.description.trim()) errs.description = true;
+    newSet.cards.forEach((c, idx) => {
+      if (!c.term.trim() || !c.definition.trim()) errs[`card-${idx}`] = true;
+    });
+    setFormErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const createAssignment = async () => {
-    if (!createForm.setId || !createForm.deadline) {
-      alert('Please choose a set and a deadline.');
+    if (!validateSet()) {
+      alert('Please fill in all required flashcard fields.');
+      return;
+    }
+    if (!createForm.deadline) {
+      alert('Please select a deadline.');
       return;
     }
     try {
+      setCreating(true);
       const uid = userIdLS || userData?._id;
+
+      // 1) Create flashcard set
+      const fd = new FormData();
+      fd.append('title', newSet.title);
+      fd.append('description', newSet.description);
+      fd.append('userId', uid);
+
+      const cardsPayload = newSet.cards.map((c) => ({
+        term: c.term,
+        definition: c.definition,
+        image: typeof c.image === 'string' ? c.image : null,
+      }));
+      newSet.cards.forEach((c) => {
+        if (c.image && typeof c.image !== 'string') {
+          fd.append('images[]', c.image);
+        }
+      });
+      fd.append('cards', JSON.stringify(cardsPayload));
+
+      // IMPORTANT: mark set used for assignment -> hidden from Search
+      fd.append('assignmentOnly', 'true');
+
+      const setRes = await axios.post(`${API}/api/flashcards`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const setId = setRes?.data?._id || setRes?.data?.id;
+      if (!setId) throw new Error('Failed to create flashcard set');
+
+      // 2) Create assignment
       await axios.post(`${API}/api/assignments`, {
         classId: id,
-        setId: createForm.setId,
+        setId,
         mode: createForm.mode,
         deadline: createForm.deadline,
         createdBy: uid,
       });
+
       setShowCreate(false);
       await fetchAssignments(uid);
       setActiveTab('assignments');
     } catch (e) {
+      console.error(e);
       alert(e?.response?.data?.message || 'Failed to create assignment');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // DELETE assignment (Teacher)
+  const deleteAssignment = async (assignmentId, title) => {
+    if (!window.confirm(`Delete assignment "${title}"? This cannot be undone.`)) return;
+    try {
+      await axios.delete(`${API}/api/assignments/${assignmentId}`, {
+        data: { requesterId: userData._id },
+      });
+      await fetchAssignments(userData._id);
+      if (activeTab !== 'assignments') setActiveTab('assignments');
+    } catch (e) {
+      alert(e?.response?.data?.message || 'Failed to delete assignment');
     }
   };
 
@@ -222,7 +294,7 @@ export default function ClassroomDetail() {
     window.location.href = '/';
   };
 
-  // ==== Results derived: apply both filters ====
+  // Filter results
   const filteredResults = useMemo(() => {
     let arr = results;
     if (filterA !== 'all') arr = arr.filter((r) => String(r.assignmentId) === String(filterA));
@@ -245,6 +317,17 @@ export default function ClassroomDetail() {
   };
 
   const formatDate = (d) => (d ? new Date(d).toLocaleString() : '-');
+
+  const changeCard = (i, key, val) => {
+    const arr = [...newSet.cards];
+    arr[i][key] = val;
+    setNewSet((s) => ({ ...s, cards: arr }));
+    setFormErrors((p) => ({ ...p, [`card-${i}`]: false }));
+  };
+  const addCard = () =>
+    setNewSet((s) => ({ ...s, cards: [...s.cards, { term: '', definition: '', image: null }] }));
+  const removeCard = (i) =>
+    setNewSet((s) => ({ ...s, cards: s.cards.filter((_, idx) => idx !== i) }));
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -338,7 +421,7 @@ export default function ClassroomDetail() {
             </div>
 
             <div>
-              {/* ===== Assignments tab ===== */}
+              {/* Assignments */}
               {activeTab === 'assignments' && (
                 <div className="bg-white rounded-xl p-6 shadow">
                   {isTeacher && (
@@ -377,24 +460,33 @@ export default function ClassroomDetail() {
                             )}
                           </div>
 
-                          {!isTeacher &&
-                            (a.submitted ? (
-                              <Link
-                                to={`/assignments/${a._id}/take`}
-                                className="text-gray-600 hover:text-gray-800 underline text-sm"
+                          {/* Right actions */}
+                          {isTeacher ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => deleteAssignment(a._id, a.title)}
+                                className="px-3 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
                               >
-                                View score
-                              </Link>
-                            ) : a.closed ? (
-                              <span className="text-sm text-gray-400">Closed</span>
-                            ) : (
-                              <Link
-                                to={`/assignments/${a._id}/take`}
-                                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
-                              >
-                                Start
-                              </Link>
-                            ))}
+                                Delete
+                              </button>
+                            </div>
+                          ) : a.submitted ? (
+                            <Link
+                              to={`/assignments/${a._id}/take`}
+                              className="text-gray-600 hover:text-gray-800 underline text-sm"
+                            >
+                              View score
+                            </Link>
+                          ) : a.closed ? (
+                            <span className="text-sm text-gray-400">Closed</span>
+                          ) : (
+                            <Link
+                              to={`/assignments/${a._id}/take`}
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm"
+                            >
+                              Start
+                            </Link>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -402,7 +494,7 @@ export default function ClassroomDetail() {
                 </div>
               )}
 
-              {/* ===== Members tab ===== */}
+              {/* Members */}
               {activeTab === 'members' && (
                 <div className="bg-white rounded-xl p-6 shadow">
                   <div className="flex items-center justify-between mb-4">
@@ -440,10 +532,12 @@ export default function ClassroomDetail() {
                                 <td className="p-2">
                                   <div className="flex items-center gap-3">
                                     <img
-                                      src={toAbsUrl(s.avatar)}   // 🔹 dùng chuẩn hoá giống UserMenu
+                                      src={toAbsUrl(s.avatar)}
                                       alt="avatar"
                                       className="w-9 h-9 rounded-full object-cover ring-1 ring-gray-200 bg-white"
-                                      onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
+                                      onError={(e) => {
+                                        e.currentTarget.src = fallbackAvatar;
+                                      }}
                                     />
                                     <span className="font-medium text-gray-800">{s.username}</span>
                                   </div>
@@ -480,14 +574,18 @@ export default function ClassroomDetail() {
                         </div>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => { if (mPage > 1) setMPage(mPage - 1); }}
+                            onClick={() => {
+                              if (mPage > 1) setMPage(mPage - 1);
+                            }}
                             disabled={mPage <= 1}
                             className="px-3 py-1.5 border rounded-lg disabled:opacity-50"
                           >
                             Prev
                           </button>
                           <button
-                            onClick={() => { if (mPage < mPages) setMPage(mPage + 1); }}
+                            onClick={() => {
+                              if (mPage < mPages) setMPage(mPage + 1);
+                            }}
                             disabled={mPage >= mPages}
                             className="px-3 py-1.5 border rounded-lg disabled:opacity-50"
                           >
@@ -500,7 +598,7 @@ export default function ClassroomDetail() {
                 </div>
               )}
 
-              {/* ===== Results tab ===== */}
+              {/* Results */}
               {activeTab === 'results' && (
                 <div className="bg-white rounded-xl p-6 shadow">
                   <div className="flex items-center justify-between mb-4">
@@ -516,7 +614,11 @@ export default function ClassroomDetail() {
                           {(classData.students || []).map((stu) => {
                             const sid = stu._id || stu;
                             const name = stu.username || String(stu);
-                            return <option key={sid} value={sid}>{name}</option>;
+                            return (
+                              <option key={sid} value={sid}>
+                                {name}
+                              </option>
+                            );
                           })}
                         </select>
                       )}
@@ -527,7 +629,9 @@ export default function ClassroomDetail() {
                       >
                         <option value="all">All assignments</option>
                         {resAssignments.map((a) => (
-                          <option key={a._id} value={a._id}>{a.title} ({a.mode})</option>
+                          <option key={a._id} value={a._id}>
+                            {a.title} ({a.mode})
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -560,11 +664,19 @@ export default function ClassroomDetail() {
                               <td className="p-2">{r.score == null ? '-' : r.score}</td>
                               <td className="p-2">{r.total}</td>
                               <td className="p-2">
-                                {r.status === 'submitted'
-                                  ? <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">Submitted</span>
-                                  : <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs">Not submitted</span>}
+                                {r.status === 'submitted' ? (
+                                  <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs">
+                                    Submitted
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs">
+                                    Not submitted
+                                  </span>
+                                )}
                               </td>
-                              <td className="p-2">{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '-'}</td>
+                              <td className="p-2">
+                                {r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '-'}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -579,50 +691,193 @@ export default function ClassroomDetail() {
           <div className="text-gray-500 italic">You need to join the class to see assignments and members.</div>
         )}
 
-        {/* Create modal */}
+        {/* CREATE ASSIGNMENT MODAL (embedded create-set UI) */}
         {showCreate && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow relative">
-              <button className="absolute top-3 right-3 text-gray-500" onClick={() => setShowCreate(false)}>✕</button>
-              <h3 className="text-lg font-semibold mb-4">New Assignment</h3>
-
-              <label className="block text-sm font-medium mb-1">Flashcard set</label>
-              <select
-                value={createForm.setId}
-                onChange={(e) => setCreateForm({ ...createForm, setId: e.target.value })}
-                className="w-full border rounded px-3 py-2 mb-1"
-              >
-                <option value="">-- Choose a set --</option>
-                {mySets.map((s) => (
-                  <option key={s._id} value={s._id}>{s.title} ({s.cards?.length || 0} terms)</option>
-                ))}
-              </select>
-
-              <label className="block text-sm font-medium mb-1">Mode</label>
-              <div className="flex gap-4 mb-3">
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="mode" value="test" checked={createForm.mode === 'test'} onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}/>
-                  <span>Test (multiple choice)</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="mode" value="learn" checked={createForm.mode === 'learn'} onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}/>
-                  <span>Learn (typed answer)</span>
-                </label>
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-6 overflow-y-auto">
+            <div className="w-full max-w-5xl bg-white rounded-2xl shadow-xl">
+              <div className="flex items-center justify-between border-b px-6 py-4">
+                <h3 className="text-xl font-semibold">Create assignment</h3>
+                <button
+                  onClick={() => setShowCreate(false)}
+                  className="rounded-full p-2 hover:bg-gray-100 text-gray-600"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
               </div>
 
-              <label className="block text-sm font-medium mb-1">Deadline</label>
-              <input
-                type="datetime-local"
-                value={createForm.deadline}
-                onChange={(e) => setCreateForm({ ...createForm, deadline: e.target.value })}
-                className="w-full border rounded px-3 py-2 mb-4"
-              />
+              <div className="px-6 py-5">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Left: Create flashcard set */}
+                  <div>
+                    <label className="block text-sm font-semibold mb-3">Create a flashcard set</label>
 
-              <div className="flex justify-end gap-2">
-                <button onClick={() => setShowCreate(false)} className="px-4 py-2">Cancel</button>
-                <button onClick={createAssignment} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">Create</button>
+                    <input
+                      className={`w-full mb-3 px-3 py-2 border rounded ${formErrors.title ? 'border-red-500' : ''}`}
+                      placeholder="Topic"
+                      value={newSet.title}
+                      onChange={(e) => {
+                        setNewSet((s) => ({ ...s, title: e.target.value }));
+                        setFormErrors((p) => ({ ...p, title: false }));
+                      }}
+                    />
+
+                    <textarea
+                      className={`w-full mb-4 px-3 py-2 border rounded ${
+                        formErrors.description ? 'border-red-500' : ''
+                      }`}
+                      placeholder="Description"
+                      value={newSet.description}
+                      onChange={(e) => {
+                        setNewSet((s) => ({ ...s, description: e.target.value }));
+                        setFormErrors((p) => ({ ...p, description: false }));
+                      }}
+                    />
+
+                    {newSet.cards.map((c, i) => (
+                      <div
+                        key={i}
+                        className={`mb-4 p-4 border rounded bg-gray-50 ${
+                          formErrors[`card-${i}`] ? 'border-red-500' : 'border-gray-200'
+                        }`}
+                      >
+                        <input
+                          className="w-full mb-2 px-3 py-2 border rounded"
+                          placeholder="Word"
+                          value={c.term}
+                          onChange={(e) => changeCard(i, 'term', e.target.value)}
+                        />
+                        <input
+                          className="w-full mb-2 px-3 py-2 border rounded"
+                          placeholder="Meaning"
+                          value={c.definition}
+                          onChange={(e) => changeCard(i, 'definition', e.target.value)}
+                        />
+
+                        <div className="mb-2">
+                          {c.image ? (
+                            <div className="relative w-28 h-28">
+                              <img
+                                src={
+                                  typeof c.image === 'string'
+                                    ? `${API}/${c.image}`
+                                    : URL.createObjectURL(c.image)
+                                }
+                                alt="preview"
+                                className="w-28 h-28 object-cover border rounded"
+                              />
+                              <button
+                                type="button"
+                                className="absolute top-1 right-1 bg-red-600 text-white text-xs px-1 rounded"
+                                onClick={() => changeCard(i, 'image', null)}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="w-28 h-28 flex flex-col items-center justify-center border-2 border-dashed border-gray-400 rounded cursor-pointer text-gray-500">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-6 w-6 mb-1"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M3 16l4-4a2 2 0 012.828 0L13 16m4 0h1a2 2 0 002-2V5a2 2 0 00-2-2H6a2 2 0 00-2 2v9a2 2 0 002 2h1"
+                                />
+                              </svg>
+                              <span className="text-sm">Upload Image</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => changeCard(i, 'image', e.target.files?.[0] || null)}
+                              />
+                            </label>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="text-red-600 text-sm"
+                          onClick={() => removeCard(i)}
+                        >
+                          Remove card
+                        </button>
+                      </div>
+                    ))}
+
+                    <button type="button" className="text-blue-600 font-semibold" onClick={addCard}>
+                      + Add card
+                    </button>
+                  </div>
+
+                  {/* Right: Settings */}
+                  <div>
+                    <label className="block text-sm font-semibold mb-3">Settings</label>
+
+                    <div className="mb-6">
+                      <div className="text-sm font-medium mb-1">Mode</div>
+                      <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="mode"
+                            value="test"
+                            checked={createForm.mode === 'test'}
+                            onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}
+                          />
+                          <span>Test (multiple choice)</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="mode"
+                            value="learn"
+                            checked={createForm.mode === 'learn'}
+                            onChange={(e) => setCreateForm({ ...createForm, mode: e.target.value })}
+                          />
+                          <span>Learn (typed answer)</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="mb-6">
+                      <div className="text-sm font-medium mb-1">Deadline</div>
+                      <input
+                        type="datetime-local"
+                        value={createForm.deadline}
+                        onChange={(e) => setCreateForm({ ...createForm, deadline: e.target.value })}
+                        className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Each question has 30s. Total time = 30s × number of questions.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-gray-500 mt-2">Each question has 30s. Total time = 30s × number of questions.</p>
+
+              <div className="flex items-center justify-end gap-3 border-t px-6 py-4">
+                <button
+                  onClick={() => setShowCreate(false)}
+                  className="px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100"
+                  disabled={creating}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={createAssignment}
+                  className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                  disabled={creating}
+                >
+                  {creating ? 'Creating...' : 'Create'}
+                </button>
+              </div>
             </div>
           </div>
         )}
