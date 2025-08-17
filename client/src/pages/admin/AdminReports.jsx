@@ -1,10 +1,9 @@
-// client/src/pages/admin/AdminReports.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
 const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
-const REASON_MAP = {
+const REASONS = {
   incorrect_content: 'Incorrect content',
   child_safety: 'Child safety / exploitation risk',
   adult_content: 'Adult / 18+ content',
@@ -12,102 +11,94 @@ const REASON_MAP = {
 };
 
 export default function AdminReports() {
-  const token = localStorage.getItem('token');
-  const [status, setStatus] = useState('open'); // open|resolved|dismissed|all
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(20);
-  const [total, setTotal] = useState(0);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState('open'); // open | resolved | dismissed | all
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 10;
 
-  const headers = useMemo(
-    () => ({ Authorization: `Bearer ${token}` }),
-    [token]
-  );
+  const token = localStorage.getItem('token');
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
-  async function load() {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/api/reports/admin/list`, {
+      const res = await axios.get(`${API}/api/reports/admin/list`, {
         headers,
-        params: { status, page, limit },
+        params: { page, limit, status },
       });
-      setItems(data.items || []);
-      setTotal(data.total || 0);
+      setItems(res.data.items || []);
+      setTotal(res.data.total || 0);
     } catch (e) {
-      console.error(e);
-      alert(e?.response?.data?.error || 'Failed to load reports');
+      console.error('Fetch reports failed:', e?.response?.data || e);
+      setItems([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    load();
+    fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, page, limit]);
+  }, [page, status]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const renderReason = (code) => REASONS[code] || code;
 
-  function getSet(r) {
-    // tương thích cả 2 dạng API: targetSet (mới) | set (cũ)
-    return r.targetSet || r.set || {};
-  }
-  function getReporter(r) {
-    return r.reporter || {};
-  }
-  function getReason(r) {
-    return r.reason || r.reasonCode || '';
-  }
+  const handleResolve = async (reportId, actionLabel) => {
+    const action = actionLabel; // 'delete' | 'hide' | 'dismiss'
+    const note = window.prompt(
+      action === 'delete'
+        ? 'Optional note to the set owner (why this set is removed):'
+        : action === 'hide'
+        ? 'Optional note to the set owner (why this set is hidden):'
+        : 'Optional note to the reporter (why this report is dismissed):',
+      ''
+    );
+    if (note === null) return;
 
-  async function resolve(reportId, action) {
-    const msgMap = {
-      delete: 'Delete this set and resolve report?',
-      hide: 'Hide this set (soft action) and resolve report?',
-      dismiss: 'Dismiss this report as invalid?',
-    };
-    if (!window.confirm(msgMap[action] || 'Proceed?')) return;
-
-    const note = window.prompt(`Admin note for ${action} (optional):`, '') || '';
     try {
       await axios.post(
         `${API}/api/reports/${reportId}/resolve`,
         { action, note },
-        { headers: { ...headers, 'Content-Type': 'application/json' } }
+        { headers }
       );
-      await load();
+      await fetchData();
+      alert(
+        action === 'delete'
+          ? 'Removed set & resolved.'
+          : action === 'hide'
+          ? 'Hidden set & resolved.'
+          : 'Dismissed report.'
+      );
     } catch (e) {
-      console.error(e);
-      alert(e?.response?.data?.error || 'Resolve failed');
+      console.error(e?.response?.data || e);
+      alert('Failed to update report.');
     }
-  }
+  };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center gap-3">
+    <div className="p-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">Reports</h1>
-
-        <select
-          value={status}
-          onChange={(e) => {
-            setPage(1);
-            setStatus(e.target.value);
-          }}
-          className="border rounded px-2 py-1"
-        >
-          <option value="open">Open</option>
-          <option value="resolved">Resolved</option>
-          <option value="dismissed">Dismissed</option>
-          <option value="all">All</option>
-        </select>
-
-        <div className="ml-auto flex items-center gap-2 text-sm text-gray-600">
-          <span>Total:</span>
-          <span className="font-medium">{total}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Status:</span>
+          <select
+            value={status}
+            onChange={(e) => { setPage(1); setStatus(e.target.value); }}
+            className="border rounded px-2 py-1"
+          >
+            <option value="open">Open</option>
+            <option value="resolved">Resolved</option>
+            <option value="dismissed">Dismissed</option>
+            <option value="all">All</option>
+          </select>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow overflow-hidden">
+      <div className="bg-white rounded shadow overflow-hidden">
         <table className="min-w-full">
           <thead className="bg-gray-50">
             <tr>
@@ -115,137 +106,90 @@ export default function AdminReports() {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Set</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Reporter</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Reason</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Details</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
                   Loading...
                 </td>
               </tr>
-            )}
-
-            {!loading && items.length === 0 && (
+            ) : items.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
-                  No items
+                <td className="px-4 py-6 text-center text-gray-500" colSpan={6}>
+                  No reports.
                 </td>
               </tr>
-            )}
-
-            {!loading &&
-              items.map((r) => {
-                const set = getSet(r);
-                const rep = getReporter(r);
-                const reason = getReason(r);
-                const setLink = set._id ? `/flashcards/${set._id}` : '#';
-
-                return (
-                  <tr key={r._id} className="border-t">
-                    <td className="px-4 py-3 text-sm">
-                      {new Date(r.createdAt).toLocaleString()}
-                    </td>
-
-                    <td className="px-4 py-3 text-sm">
-                      <div className="font-medium truncate max-w-xs">
-                        {set.title || '—'}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        ID:&nbsp;{set._id || '—'} &nbsp;|&nbsp;
-                        <a
-                          href={setLink}
-                          className="text-blue-600 hover:underline"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          View
-                        </a>
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3 text-sm">
-                      <div className="font-medium">
-                        {rep.username || rep.email || '—'}
-                      </div>
-                      <div className="text-xs text-gray-500">ID: {rep._id || '—'}</div>
-                    </td>
-
-                    <td className="px-4 py-3 text-sm">
-                      {REASON_MAP[reason] || reason || '—'}
-                    </td>
-
-                    <td className="px-4 py-3 text-sm max-w-md break-words">
-                      {r.details || '—'}
-                    </td>
-
-                    <td className="px-4 py-3 text-sm">
-                      <span className="px-2 py-1 rounded bg-gray-100">
-                        {r.status}
-                        {r.action ? ` / ${r.action}` : ''}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3 text-sm">
-                      {r.status === 'open' ? (
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => resolve(r._id, 'delete')}
-                            className="px-3 py-1 rounded bg-red-600 text-white"
+            ) : (
+              items.map((r) => (
+                <tr key={r._id} className="border-t">
+                  <td className="px-4 py-3 text-sm">
+                    {r.createdAt ? new Date(r.createdAt).toLocaleString() : '-'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-medium">{r?.targetSet?.title || '(deleted set)'}</div>
+                    <div className="text-xs text-gray-500">
+                      ID: {r?.targetSet?._id || r.targetSet}
+                      {r?.targetSet?._id && (
+                        <>
+                          {' · '}
+                          <a
+                            href={`/flashcards/${r.targetSet._id}?admin=1`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline"
+                            title="Open this set in a new tab (admin preview)"
                           >
-                            Delete
-                          </button>
-                          <button
-                            onClick={() => resolve(r._id, 'hide')}
-                            className="px-3 py-1 rounded bg-yellow-500 text-white"
-                          >
-                            Hide
-                          </button>
-                          <button
-                            onClick={() => resolve(r._id, 'dismiss')}
-                            className="px-3 py-1 rounded border"
-                          >
-                            Dismiss
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="text-right text-gray-400">—</div>
+                            View
+                          </a>
+                        </>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm font-medium">{r?.reporter?.username || '(unknown)'}</div>
+                    <div className="text-xs text-gray-500">{r?.reporter?.email || ''}</div>
+                  </td>
+                  <td className="px-4 py-3 text-sm">{renderReason(r.reason)}</td>
+                  <td className="px-4 py-3 text-sm">{r.status}</td>
+                  <td className="px-4 py-3">
+                    {r.status === 'open' ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleResolve(r._id, 'delete')}
+                          className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
+    
+                        <button
+                          onClick={() => handleResolve(r._id, 'dismiss')}
+                          className="px-3 py-1.5 bg-gray-200 rounded hover:bg-gray-300"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-right text-xs text-gray-500">
+                        {r.action ? `Action: ${r.action}` : '—'}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">
-          Page {page}/{totalPages}
+      <div className="flex items-center justify-between mt-4">
+        <div className="text-sm text-gray-500">
+          Page {page} / {totalPages} • Total {total}
         </div>
-
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">
-            Per page:&nbsp;
-            <select
-              value={limit}
-              onChange={(e) => {
-                setPage(1);
-                setLimit(parseInt(e.target.value, 10));
-              }}
-              className="border rounded px-2 py-1"
-            >
-              {[10, 20, 50, 100].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <button
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}

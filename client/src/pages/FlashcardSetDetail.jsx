@@ -12,9 +12,8 @@ import SearchInput from '../components/SearchInput';
 import Sidebar from '../components/Sidebar';
 
 const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
-const RECAPTCHA_SITE_KEY =
-  process.env.REACT_APP_RECAPTCHA_SITE_KEY ||
-  (import.meta?.env?.VITE_RECAPTCHA_SITE_KEY ?? ''); // hỗ trợ Vite nếu bạn dùng
+// CRA/Webpack: KHÔNG dùng import.meta
+const RECAPTCHA_SITE_KEY = process.env.REACT_APP_RECAPTCHA_SITE_KEY || '';
 
 const abs = (src) => {
   if (!src) return '';
@@ -31,7 +30,7 @@ const REPORT_REASONS = [
   { value: 'spam_or_ads', label: 'Spam or advertising' },
 ];
 
-// Recaptcha helpers
+/* ---------- reCAPTCHA helpers ---------- */
 function ensureRecaptchaScript() {
   return new Promise((resolve) => {
     if (!RECAPTCHA_SITE_KEY) return resolve(null);
@@ -49,12 +48,11 @@ function ensureRecaptchaScript() {
     document.body.appendChild(s);
   });
 }
-
 async function getRecaptchaToken(action = 'report_submit') {
   if (!RECAPTCHA_SITE_KEY) return null;
   const gre = await ensureRecaptchaScript();
-  if (!gre?.ready) return null;
-  await gre.ready();
+  if (!gre || !gre.execute || !gre.ready) return null;
+  await new Promise((r) => gre.ready(r)); // v3 cần callback
   try {
     const token = await gre.execute(RECAPTCHA_SITE_KEY, { action });
     return token || null;
@@ -69,6 +67,11 @@ function FlashcardSetDetail() {
   const reportBtnRef = useRef();
   const reportMenuRef = useRef();
   const { id } = useParams();
+
+  // admin preview via ?admin=1 or ?adminPreview=1
+  const searchParams = new URLSearchParams(window.location.search);
+  const adminPreview =
+    searchParams.get('admin') === '1' || searchParams.get('adminPreview') === '1';
 
   const [userData, setUserData] = useState(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -91,10 +94,10 @@ function FlashcardSetDetail() {
   const [selectedReason, setSelectedReason] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [details, setDetails] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [reportMessage, setReportMessage] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Load user
+  /* ---------- Load user ---------- */
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId');
     if (!storedUserId) {
@@ -102,7 +105,6 @@ function FlashcardSetDetail() {
       return;
     }
     const token = localStorage.getItem('token');
-
     axios
       .get(`${API}/api/user/${storedUserId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -112,12 +114,9 @@ function FlashcardSetDetail() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Preload reCAPTCHA (non-blocking)
-  useEffect(() => {
-    ensureRecaptchaScript();
-  }, []);
+  useEffect(() => { ensureRecaptchaScript(); }, []);
 
-  // Load set detail
+  /* ---------- Load set detail (support admin preview) ---------- */
   useEffect(() => {
     const storedUserId = localStorage.getItem('userId');
     const token = localStorage.getItem('token');
@@ -125,7 +124,24 @@ function FlashcardSetDetail() {
     const fetchSet = async () => {
       try {
         setFetchError('');
-        const res = await axios.get(`${API}/api/flashcards/${id}`);
+        let res;
+
+        if (adminPreview && token) {
+          try {
+            res = await axios.get(`${API}/api/admin-preview/flashcards/${id}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          } catch (e) {
+            if (!(e?.response?.status === 401 || e?.response?.status === 403)) {
+              throw e;
+            }
+          }
+        }
+
+        if (!res) {
+          res = await axios.get(`${API}/api/flashcards/${id}`);
+        }
+
         setSetData(res.data);
 
         if (res.data?._id) {
@@ -136,7 +152,7 @@ function FlashcardSetDetail() {
           recentList = recentList.slice(0, 5);
           localStorage.setItem('recentSetIds', JSON.stringify(recentList));
 
-          // server recent (gửi kèm Authorization để tránh 500)
+          // server recent
           if (storedUserId && token) {
             axios
               .put(
@@ -156,10 +172,11 @@ function FlashcardSetDetail() {
         }
       }
     };
-    fetchSet();
-  }, [id]);
 
-  // click outside
+    fetchSet();
+  }, [id, adminPreview]);
+
+  /* ---------- Click outside ---------- */
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (avatarRef.current && !avatarRef.current.contains(e.target)) {
@@ -199,7 +216,6 @@ function FlashcardSetDetail() {
     if (currentIndex > 0) setCurrentIndex((i) => i - 1);
   };
 
-  // Report handlers
   const onPickReason = (reason) => {
     setSelectedReason(reason);
     setReportOpen(false);
@@ -220,12 +236,7 @@ function FlashcardSetDetail() {
     setSubmitting(true);
     setReportMessage(null);
     try {
-      // Lấy recaptcha token (nếu có key) — nếu không có sẽ null
-      const recaptchaToken = await getRecaptchaToken('report_submit');
-
-      const headers = { Authorization: `Bearer ${token}` };
-      // Dev bypass: nếu không có site key, gửi thêm header x-recaptcha: 'test'
-      if (!RECAPTCHA_SITE_KEY) headers['x-recaptcha'] = 'test';
+      const recaptchaToken = (await getRecaptchaToken('report_submit')) || 'test';
 
       const res = await axios.post(
         `${API}/api/reports`,
@@ -235,7 +246,7 @@ function FlashcardSetDetail() {
           details,
           recaptchaToken,
         },
-        { headers }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (res?.data?.duplicated) {
@@ -253,7 +264,7 @@ function FlashcardSetDetail() {
     } catch (err) {
       const status = err?.response?.status;
       const payload = err?.response?.data;
-      console.log('REPORT ERROR', status, payload);
+      console.log('REPORT ERROR', status, payload, '|', err?.message, err?.code);
 
       if (status === 429) {
         setReportMessage({
@@ -312,9 +323,7 @@ function FlashcardSetDetail() {
     );
   }
 
-  if (!setData) {
-    return <div className="p-10 text-center text-gray-500">Loading...</div>;
-  }
+  if (!setData) return <div className="p-10 text-center text-gray-500">Loading...</div>;
 
   return (
     <div className="flex min-h-screen bg-gray-100">

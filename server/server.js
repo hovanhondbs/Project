@@ -24,27 +24,32 @@ mongoose
     process.exit(1);
   });
 
-/* -------------------- Middlewares -------------------- */
-app.use(
-  cors({
-    origin: CLIENT_ORIGIN,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-recaptcha'],
-  })
-);
+/* -------------------- CORS & Parsers -------------------- */
+const corsOptions = {
+  origin: CLIENT_ORIGIN,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
+// Preflight 204
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Static uploads
+/* -------------------- Static -------------------- */
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 /* -------------------- Routes -------------------- */
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoute');
 const searchRoute = require('./routes/searchRoute');
-
 const classroomRoute = require('./routes/classroomRoute');
 const flashcardRoutes = require('./routes/flashcardRoutes');
 const activityRoutes = require('./routes/activityRoutes');
@@ -52,19 +57,19 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
+const adminPreviewRoutes = require('./routes/adminPreviewRoutes'); // <<== MỚI
 
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/search', searchRoute);
-
 app.use('/api/classrooms', classroomRoute);
 app.use('/api/flashcards', flashcardRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reports', reportRoutes);
-
 app.use('/api/admin', adminRoutes);
 app.use('/api/assignments', assignmentRoutes);
+app.use('/api/admin-preview', adminPreviewRoutes); // <<== MỚI
 
 // Health check
 app.get('/api/health', (_req, res) =>

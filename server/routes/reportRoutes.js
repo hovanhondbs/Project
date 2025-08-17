@@ -22,15 +22,15 @@ const ALLOWED_REASONS = new Set([
   'spam_or_ads',
 ]);
 
-const MAX_REPORTS_24H_PER_USER = 10; // quota 24h
-const SAME_SET_COOLDOWN_HOURS  = 12; // cooldown theo set
-const AUTOHIDE_DISTINCT_REPORTERS_24H = 5; // auto-hide ngưỡng người khác nhau
+const MAX_REPORTS_24H_PER_USER = 10;
+const SAME_SET_COOLDOWN_HOURS = 12;
+const AUTOHIDE_DISTINCT_REPORTERS_24H = 5;
 
-const STRIKE_THRESHOLD   = 3; // số lần dismiss trong 7 ngày → ban
+const STRIKE_THRESHOLD = 3;
 const STRIKE_WINDOW_DAYS = 7;
-const BAN_HOURS          = 72;
+const BAN_HOURS = 72;
 
-const clamp = (s = '', max = 1000) => String(s || '').slice(0, max);
+const clip = (s = '', n = 2000) => String(s || '').slice(0, n);
 
 /* ======= Helpers ======= */
 async function notifyUser(userId, { title, message, link = '', meta = {}, type = 'info' }) {
@@ -38,8 +38,8 @@ async function notifyUser(userId, { title, message, link = '', meta = {}, type =
     await Notification.create({
       user: new mongoose.Types.ObjectId(userId),
       type,
-      title: clamp(title, 200),
-      message: clamp(message, 1000),
+      title: clip(title, 200),
+      message: clip(message, 1000),
       link,
       meta,
     });
@@ -47,23 +47,22 @@ async function notifyUser(userId, { title, message, link = '', meta = {}, type =
       const { emitToUser } = require('../socket');
       emitToUser(String(userId), 'notification', { title, message, link, meta, type });
     } catch {}
-  } catch (err) {
-    console.error('notifyUser error:', err?.message);
+  } catch (e) {
+    console.error('notifyUser error:', e?.message);
   }
 }
 
 /* ======= USER: tạo report ======= */
-router.post('/', auth, reportsLimiter, recaptcha(true), async (req, res) => {
+router.post('/', auth, reportsLimiter, recaptcha(), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
-    const { setId } = req.body || {};
+    const setId = req.body?.setId;
     const reason = req.body?.reason || req.body?.reasonCode;
-    const details = clamp(req.body?.details || '', 1000);
+    const details = clip(req.body?.details || '', 1000);
 
     if (!mongoose.isValidObjectId(setId)) return res.status(400).json({ error: 'invalid_set' });
     if (!ALLOWED_REASONS.has(String(reason))) return res.status(400).json({ error: 'invalid_reason' });
 
-    // user bị ban report tạm thời?
     const me = await User.findById(userId).lean();
     if (me?.reportBanUntil && new Date(me.reportBanUntil) > new Date()) {
       return res.status(403).json({ error: 'report_temporarily_banned', until: me.reportBanUntil });
@@ -75,45 +74,50 @@ router.post('/', auth, reportsLimiter, recaptcha(true), async (req, res) => {
       return res.status(400).json({ error: 'cannot_report_own_set' });
     }
 
+    // Nếu đã có report "open" → coi như duplicated
+    const existingOpen = await Report.findOne({
+      reporter: userId,
+      targetSet: setId,
+      status: 'open',
+    }).lean();
+    if (existingOpen) return res.json({ ok: true, duplicated: true, message: 'already_reported_open' });
+
     // quota 24h
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const count24h = await Report.countDocuments({ reporter: userId, createdAt: { $gte: since24h } });
-    if (count24h >= MAX_REPORTS_24H_PER_USER) {
-      return res.status(429).json({ error: 'too_many_reports_24h' });
-    }
+    if (count24h >= MAX_REPORTS_24H_PER_USER) return res.status(429).json({ error: 'too_many_reports_24h' });
 
     // cooldown cùng set
     const sinceCooldown = new Date(Date.now() - SAME_SET_COOLDOWN_HOURS * 60 * 60 * 1000);
-    const dup = await Report.findOne({
+    const dupCooldown = await Report.findOne({
       reporter: userId,
       targetSet: setId,
       createdAt: { $gte: sinceCooldown },
-      status: 'open',
     }).lean();
-    if (dup) {
-      return res.status(200).json({ ok: true, duplicated: true, message: 'already_reported_open' });
-    }
+    if (dupCooldown) return res.json({ ok: true, duplicated: true, message: 'already_reported_recently' });
 
     // tạo report
-    const doc = await Report.create({
-      targetSet: setId,
-      reporter: userId,
-      reason,
-      status: 'open',
-      action: null,
-      details, // dùng được nếu schema Report của bạn có field details
-    });
+    let doc;
+    try {
+      doc = await Report.create({
+        targetSet: setId,
+        reporter: userId,
+        reason,
+        details,
+        status: 'open',
+      });
+    } catch (e) {
+      if (e?.code === 11000) return res.json({ ok: true, duplicated: true, message: 'already_reported_open' });
+      throw e;
+    }
 
-    // tăng đếm report
+    // tăng đếm & auto-hide
     try { await FlashcardSet.updateOne({ _id: setId }, { $inc: { reportCount: 1 } }); } catch {}
-
-    // auto-hide nếu đủ ngưỡng người khác nhau trong 24h
     try {
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const distinctCount = await Report.distinct('reporter', { targetSet: setId, createdAt: { $gte: since } });
-      if ((distinctCount?.length || 0) >= AUTOHIDE_DISTINCT_REPORTERS_24H) {
+      const distinctReporters = await Report.distinct('reporter', { targetSet: setId, createdAt: { $gte: since } });
+      if ((distinctReporters?.length || 0) >= AUTOHIDE_DISTINCT_REPORTERS_24H) {
         await FlashcardSet.updateOne({ _id: setId }, { $set: { isHidden: true } });
-        // Thông báo cho owner
         await notifyUser(set.userId, {
           title: 'Your set was auto-hidden',
           message: `Your set "${set.title}" has been temporarily hidden due to multiple reports and is under review.`,
@@ -126,7 +130,7 @@ router.post('/', auth, reportsLimiter, recaptcha(true), async (req, res) => {
       console.error('auto-hide error:', e.message);
     }
 
-    // báo admin
+    // ping admin
     const admins = await User.find({ role: 'Admin', status: { $ne: 'deleted' } }).select('_id').lean();
     await Promise.all(
       admins.map(a =>
@@ -148,7 +152,8 @@ router.post('/', auth, reportsLimiter, recaptcha(true), async (req, res) => {
 });
 
 /* ======= ADMIN: list ======= */
-router.get('/admin/list', requireAdmin, async (req, res) => {
+// ⚠️ cần auth trước rồi mới requireAdmin
+router.get('/admin/list', auth, requireAdmin, async (req, res) => {
   try {
     const status = String(req.query.status || 'open');
     const page = Math.max(1, parseInt(req.query.page || '1', 10));
@@ -176,11 +181,12 @@ router.get('/admin/list', requireAdmin, async (req, res) => {
 });
 
 /* ======= ADMIN: resolve ======= */
-router.post('/:id/resolve', requireAdmin, async (req, res) => {
+// ⚠️ cần auth trước rồi mới requireAdmin
+router.post('/:id/resolve', auth, requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const action = String(req.body?.action || '');
-    const note = clamp(req.body?.note || '', 2000);
+    const note = clip(req.body?.note || '', 2000);
 
     if (!['delete', 'hide', 'dismiss'].includes(action)) {
       return res.status(400).json({ error: 'invalid_action' });
@@ -188,8 +194,11 @@ router.post('/:id/resolve', requireAdmin, async (req, res) => {
 
     const report = await Report.findById(id);
     if (!report) return res.status(404).json({ error: 'report_not_found' });
-    if (report.status !== 'open') {
-      return res.status(400).json({ error: 'already_resolved' });
+    if (report.status !== 'open') return res.status(400).json({ error: 'already_resolved' });
+
+    // vá dữ liệu cũ: đảm bảo có reason hợp lệ
+    if (!report.reason || typeof report.reason !== 'string' || report.reason.trim() === '') {
+      report.reason = 'incorrect_content';
     }
 
     const set = await FlashcardSet.findById(report.targetSet);
@@ -237,7 +246,7 @@ router.post('/:id/resolve', requireAdmin, async (req, res) => {
     }
 
     if (action === 'dismiss') {
-      // Strike/ban cho reporter
+      // phạt spam (strike/ban)
       const rep = await User.findById(report.reporter).lean();
       if (rep) {
         const now = new Date();
@@ -249,14 +258,11 @@ router.post('/:id/resolve', requireAdmin, async (req, res) => {
         }
 
         strikes += 1;
-        const update = {
-          reportStrikeCount: strikes,
-          reportStrikeUpdatedAt: now,
-        };
+        const update = { reportStrikeCount: strikes, reportStrikeUpdatedAt: now };
 
         if (strikes >= STRIKE_THRESHOLD) {
           update.reportBanUntil = new Date(Date.now() + BAN_HOURS * 60 * 60 * 1000);
-          update.reportStrikeCount = 0; // reset chu kỳ
+          update.reportStrikeCount = 0;
         }
 
         await User.updateOne({ _id: rep._id }, { $set: update });
