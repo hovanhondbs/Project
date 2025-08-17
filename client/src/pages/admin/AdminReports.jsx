@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 
 const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
@@ -13,7 +14,7 @@ const REASONS = {
 export default function AdminReports() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState('open'); // open | resolved | dismissed | all
+  const [status, setStatus] = useState('open');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const limit = 10;
@@ -136,15 +137,14 @@ export default function AdminReports() {
                       {r?.targetSet?._id && (
                         <>
                           {' · '}
-                          <a
-                            href={`/flashcards/${r.targetSet._id}?admin=1`}
-                            target="_blank"
-                            rel="noreferrer"
+                          {/* Sang trang preview mới */}
+                          <Link
+                            to={`/admin/reports/preview/${r.targetSet._id}`}
                             className="text-blue-600 hover:underline"
-                            title="Open this set in a new tab (admin preview)"
+                            title="Preview set (admin)"
                           >
                             View
-                          </a>
+                          </Link>
                         </>
                       )}
                     </div>
@@ -164,7 +164,6 @@ export default function AdminReports() {
                         >
                           Delete
                         </button>
-    
                         <button
                           onClick={() => handleResolve(r._id, 'dismiss')}
                           className="px-3 py-1.5 bg-gray-200 rounded hover:bg-gray-300"

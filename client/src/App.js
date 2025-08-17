@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage'; // 👈 Trang bạn đã tạo
+import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import ChooseRolePage from './pages/ChooseRolePage';
 import Dashboarduser from './pages/Dashboarduser';
@@ -16,10 +16,12 @@ import CreateClassPage from './pages/CreateClassPage';
 import ClassroomDetail from './pages/ClassroomDetail';
 import SearchPage from './pages/SearchPage';
 import AssignmentTake from './pages/AssignmentTake';
+
 import AdminRoute from './components/AdminRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminReports from './pages/admin/AdminReports';
+import AdminSetReview from './pages/admin/AdminSetReview'; // preview tối giản
 
 function App() {
   return (
@@ -43,6 +45,8 @@ function App() {
         <Route path="/classes/:id" element={<ClassroomDetail />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/assignments/:id/take" element={<AssignmentTake />} />
+
+        {/* Admin pages */}
         <Route
           path="/admin"
           element={
@@ -65,7 +69,17 @@ function App() {
             <AdminRoute>
               <AdminReports />
             </AdminRoute>
-          } />
+          }
+        />
+        {/* NEW: trang preview bộ thẻ bị tố cáo (không có nút Report) */}
+        <Route
+          path="/admin/reports/preview/:id"
+          element={
+            <AdminRoute>
+              <AdminSetReview />
+            </AdminRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );
