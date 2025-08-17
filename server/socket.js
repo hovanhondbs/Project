@@ -1,30 +1,23 @@
 // server/socket.js
 const { Server } = require('socket.io');
 
-let io = null;
-const userRoom = (userId) => `user:${userId}`;
+let io;
 
-function initSocket(server, opts = {}) {
-  io = new Server(server, {
+function init(httpServer, origin) {
+  io = new Server(httpServer, {
     cors: {
-      origin: opts.origin || '*',
-      methods: ['GET', 'POST'],
+      origin: origin || 'http://localhost:3000',
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     },
-    pingTimeout: 20000,
-    pingInterval: 25000,
+    transports: ['websocket', 'polling'], // bật fallback
+    // allowEIO3: true, // bật nếu client là v3
   });
 
   io.on('connection', (socket) => {
-    // Client gửi: socket.emit('register', { userId })
+    // FE nên emit: socket.emit('register', { userId })
     socket.on('register', ({ userId }) => {
-      if (!userId) return;
-      const uid = String(userId);
-      socket.data.userId = uid;
-      socket.join(userRoom(uid));
-    });
-
-    socket.on('disconnect', () => {
-      // cleanup tự động do join room theo socket
+      if (userId) socket.join(String(userId));
     });
   });
 
@@ -38,7 +31,7 @@ function getIO() {
 
 function emitToUser(userId, event, payload) {
   if (!io) return;
-  getIO().to(userRoom(String(userId))).emit(event, payload);
+  io.to(String(userId)).emit(event, payload);
 }
 
-module.exports = { initSocket, getIO, emitToUser, userRoom };
+module.exports = { init, getIO, emitToUser };

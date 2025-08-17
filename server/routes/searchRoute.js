@@ -1,6 +1,8 @@
+// server/routes/searchRoute.js
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+
 const FlashcardSet = require('../models/FlashcardSet');
 const Classroom = require('../models/Classroom');
 

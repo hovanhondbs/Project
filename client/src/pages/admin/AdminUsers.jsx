@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 
 const API = process.env.REACT_APP_API_BASE || 'http://localhost:5000';
@@ -11,7 +11,7 @@ export default function AdminUsers() {
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
 
-  const load = async (p = page) => {
+  const load = useCallback(async (p = 1) => {
     try {
       setLoading(true);
       setErr('');
@@ -31,26 +31,26 @@ export default function AdminUsers() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(1); }, []); // mount
+  useEffect(() => { load(1); }, [load]); // mount
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-semibold">User Management</h1>
-        <div className="text-sm text-gray-500">Total {total}</div>
+        <h1 className="text-xl font-bold">Users</h1>
+        <div className="text-sm text-gray-600">Total: {total}</div>
       </div>
 
-      <div className="bg-white rounded-xl shadow overflow-x-auto">
+      <div className="bg-white rounded-xl shadow overflow-hidden">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="bg-gray-50">
-              <th className="text-left p-3">Username</th>
-              <th className="text-left p-3">Email</th>
-              <th className="text-left p-3">Role</th>
-              <th className="text-left p-3">Status</th>
-              <th className="text-left p-3">Joined</th>
+              <th className="p-3 text-left">Username</th>
+              <th className="p-3 text-left">Email</th>
+              <th className="p-3 text-left">Role</th>
+              <th className="p-3 text-left">Status</th>
+              <th className="p-3 text-left">Joined</th>
             </tr>
           </thead>
           <tbody>
@@ -60,9 +60,9 @@ export default function AdminUsers() {
             {!loading && err && (
               <tr><td className="p-6 text-red-600" colSpan={5}>{err}</td></tr>
             )}
-            {!loading && !err && items.map(u => (
+            {!loading && !err && items.map((u) => (
               <tr key={u._id} className="border-t">
-                <td className="p-3">{u.username}</td>
+                <td className="p-3 font-medium">{u.username}</td>
                 <td className="p-3">{u.email}</td>
                 <td className="p-3">{u.role}</td>
                 <td className="p-3">{u.status}</td>
