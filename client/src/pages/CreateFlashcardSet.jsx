@@ -18,7 +18,12 @@ function CreateFlashcardSet() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showFixedButton, setShowFixedButton] = useState(false);
-  const [errors, setErrors] = useState({}); // ✅ dùng object
+  const [errors, setErrors] = useState({});
+
+  // --- NEW: state cho gợi ý ---
+  const [suggestionsMap, setSuggestionsMap] = useState({}); // { [index]: string[] }
+  const [suggestOpenIndex, setSuggestOpenIndex] = useState(null);
+  const suggestTimersRef = useRef({}); // debounce timer theo index
 
   const userId = localStorage.getItem('userId');
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,12 +34,12 @@ function CreateFlashcardSet() {
       navigate('/search', { state: { query: searchTerm } });
     }
   };
+
   useEffect(() => {
     if (!userId) {
       setLoading(false);
       return;
     }
-
     axios.get(`http://localhost:5000/api/user/${userId}`)
       .then((res) => setUserData(res.data))
       .catch((err) => console.error("Lỗi lấy user info:", err))
@@ -62,15 +67,17 @@ function CreateFlashcardSet() {
       if (avatarRef.current && !avatarRef.current.contains(e.target)) {
         setDropdownOpen(false);
       }
+      // đóng dropdown gợi ý nếu click ngoài
+      if (!e.target.closest('.suggest-wrap')) {
+        setSuggestOpenIndex(null);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   useEffect(() => {
-    const handleScroll = () => {
-      setShowFixedButton(window.scrollY > 300);
-    };
+    const handleScroll = () => setShowFixedButton(window.scrollY > 300);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
@@ -84,11 +91,7 @@ function CreateFlashcardSet() {
     const updated = [...cards];
     updated[index][field] = value;
     setCards(updated);
-
-    setErrors(prev => ({
-      ...prev,
-      [`card-${index}`]: false
-    }));
+    setErrors(prev => ({ ...prev, [`card-${index}`]: false }));
   };
 
   const handleImageUpload = (index, file) => {
@@ -111,6 +114,43 @@ function CreateFlashcardSet() {
     const updated = [...cards];
     updated.splice(index, 1);
     setCards(updated);
+    setSuggestionsMap(prev => {
+      const cp = { ...prev };
+      delete cp[index];
+      return cp;
+    });
+    if (suggestOpenIndex === index) setSuggestOpenIndex(null);
+  };
+
+  // --- NEW: gọi API gợi ý (debounce) ---
+  const fetchSuggestions = async (index, value) => {
+    if (!value || value.trim().length < 2) {
+      setSuggestionsMap(prev => ({ ...prev, [index]: [] }));
+      return;
+    }
+    try {
+      const res = await axios.get('http://localhost:5000/api/ai/suggest', {
+        params: { term: value, topic: title, src: 'en', dst: 'vi' }
+      });
+      setSuggestionsMap(prev => ({ ...prev, [index]: res.data?.suggestions || [] }));
+      setSuggestOpenIndex(index);
+    } catch (e) {
+      console.error('Lỗi gợi ý:', e?.response?.data || e.message);
+    }
+  };
+
+  const onTermInputChange = (index, value) => {
+    handleCardChange(index, 'term', value);
+    clearTimeout(suggestTimersRef.current[index]);
+    suggestTimersRef.current[index] = setTimeout(() => {
+      fetchSuggestions(index, value);
+    }, 350);
+  };
+
+  const pickSuggestion = (index, text) => {
+    handleCardChange(index, 'term', text);
+    setSuggestionsMap(prev => ({ ...prev, [index]: [] }));
+    setSuggestOpenIndex(null);
   };
 
   const handleSubmit = async (e) => {
@@ -127,7 +167,6 @@ function CreateFlashcardSet() {
     });
 
     setErrors(newErrors);
-
     if (Object.keys(newErrors).length > 0) {
       alert("Vui lòng điền đầy đủ tất cả các trường.");
       return;
@@ -170,7 +209,6 @@ function CreateFlashcardSet() {
       setCards([{ term: '', definition: '', image: null }]);
       setErrors({});
       navigate('/library');
-
     } catch (err) {
       if (err.response && err.response.status === 409) {
         setErrors(prev => ({ ...prev, title: true }));
@@ -227,12 +265,36 @@ function CreateFlashcardSet() {
 
             {cards.map((card, index) => (
               <div key={index} className={`mb-4 p-4 border rounded shadow bg-gray-50 relative ${errors[`card-${index}`] ? 'border-red-500' : ''}`}>
-                <input
-                  className="w-full mb-2 px-3 py-2 border rounded shadow"
-                  placeholder="Word"
-                  value={card.term}
-                  onChange={(e) => handleCardChange(index, 'term', e.target.value)}
-                />
+                {/* Ô Word + gợi ý */}
+                <div className="suggest-wrap relative">
+                  <input
+                    className="w-full mb-2 px-3 py-2 border rounded shadow"
+                    placeholder="Word"
+                    value={card.term}
+                    onChange={(e) => onTermInputChange(index, e.target.value)}
+                    onFocus={() => {
+                      if ((suggestionsMap[index] || []).length) setSuggestOpenIndex(index);
+                    }}
+                  />
+
+                  {/* Dropdown gợi ý */}
+                  {suggestOpenIndex === index && (suggestionsMap[index]?.length > 0) && (
+                    <ul className="absolute left-0 right-0 top-full z-20 bg-white border rounded shadow mt-1 max-h-60 overflow-auto">
+                      {suggestionsMap[index].map((s, i) => (
+                        <li key={`${i}-${s}`}>
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100"
+                            onClick={() => pickSuggestion(index, typeof s === 'string' ? s : (s.word || ''))}
+                          >
+                            {typeof s === 'string' ? s : (s.word || JSON.stringify(s))}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
                 <input
                   className="w-full mb-2 px-3 py-2 border rounded shadow"
                   placeholder="Meaning"
